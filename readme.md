@@ -54,7 +54,13 @@ CanvasConnect/
     ```bash
     npm install
     ```
-3. Start the development server:
+3. Install the required packages:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+4. Start the development server:
     ```bash
     npm run dev
     ```
@@ -62,22 +68,27 @@ CanvasConnect/
 ### Backend Setup
         
 1. Navigate to the backend directory:
+
     ```bash
     cd backend
     ```
 2. Create a virtual environment (optional but recommended):
+
     ```bash
     python -m venv venv
     source venv/bin/activate  # On Windows use `venv\Scripts\activate`
     ```
 3. Install the required packages:
+
     ```bash
     pip install -r requirements.txt
     ```
 4. Start the Flask server:
+
     ```bash
     python app.py  # Replace with your main Flask file if different
      ```
+     
 ### Running the Project
         
 Ensure both the frontend and backend servers are running.
