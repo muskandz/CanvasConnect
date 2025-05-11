@@ -1,10 +1,10 @@
-from flask import Flask
+# Import and patch eventlet first, before any other imports
+import eventlet
+eventlet.monkey_patch()
+
+from flask import Flask, request
 from flask_cors import CORS
 from flask_socketio import SocketIO, join_room, leave_room, emit
-import eventlet
-
-# Patch the standard library to use eventlet's green versions
-eventlet.monkey_patch()
 
 from routes.boards import boards
 
@@ -20,43 +20,84 @@ app.register_blueprint(boards)
 
 @socketio.on('connect')
 def handle_connect():
-    print('Client connected')
+    print(f'Client connected: {request.sid}')
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    print('Client disconnected')
+    print(f'Client disconnected: {request.sid}')
 
 @socketio.on('join')
 def handle_join(data):
     room = data.get('room')
     join_room(room)
-    print(f"User joined room: {room}")
-    emit('user_joined', {'room': room}, room=room)
-
-    # Fetch current board state and send to the newly joined user only
-    from models.board_model import get_board_data
-    board_data = get_board_data(room)
-    emit('load_board_state', board_data, room=request.sid)
+    print(f"User {request.sid} joined room: {room}")
+    # Notify others in the room that a new user has joined
+    emit('user_joined', {'room': room, 'userId': request.sid}, room=room, include_self=False)
 
 @socketio.on('leave')
 def handle_leave(data):
     room = data.get('room')
     leave_room(room)
-    print(f"User left room: {room}")
-    emit('user_left', {'room': room}, room=room)
+    print(f"User {request.sid} left room: {room}")
+    emit('user_left', {'room': room, 'userId': request.sid}, room=room)
 
 @socketio.on('drawing')
 def handle_drawing(data):
     room = data.get('room')
     emit('drawing', data, room=room, include_self=False)
 
-@socketio.on('note_added')
-def handle_note_added(data):
-    emit('note_added', data, room=data['room'], include_self=False)
+# WebRTC Voice Chat Signaling
+@socketio.on('voice-join')
+def handle_voice_join(data):
+    room = data.get('room')
+    if not room:
+        return
+        
+    join_room(f"voice-{room}")
+    print(f"User {request.sid} joined voice room: {room}")
+    
+    # Notify others that a new user has joined for voice chat
+    emit('user-joined', {'userId': request.sid}, room=f"voice-{room}", include_self=False)
 
-@socketio.on('note_updated')
-def handle_note_updated(data):
-    emit('note_updated', data, room=data['room'], include_self=False)
+@socketio.on('voice-leave')
+def handle_voice_leave(data):
+    room = data.get('room')
+    if not room:
+        return
+        
+    leave_room(f"voice-{room}")
+    print(f"User {request.sid} left voice room: {room}")
+    emit('user-left', {'userId': request.sid}, room=f"voice-{room}")
+
+@socketio.on('voice-offer')
+def handle_voice_offer(data):
+    target_id = data.get('targetUserId')
+    if not target_id:
+        return
+        
+    print(f"Forwarding voice offer from {request.sid} to {target_id}")
+    data['userId'] = request.sid
+    emit('voice-offer', data, room=target_id)
+
+@socketio.on('voice-answer')
+def handle_voice_answer(data):
+    target_id = data.get('targetUserId')
+    if not target_id:
+        return
+        
+    print(f"Forwarding voice answer from {request.sid} to {target_id}")
+    data['userId'] = request.sid
+    emit('voice-answer', data, room=target_id)
+
+@socketio.on('ice-candidate')
+def handle_ice_candidate(data):
+    target_id = data.get('targetUserId')
+    if not target_id:
+        return
+        
+    print(f"Forwarding ICE candidate from {request.sid} to {target_id}")
+    data['userId'] = request.sid
+    emit('ice-candidate', data, room=target_id)
 
 # Run the Flask app
 if __name__ == "__main__":

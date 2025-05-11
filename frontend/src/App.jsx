@@ -4,6 +4,10 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import WhiteboardEditor from "./pages/WhiteboardEditor";
+import io from "socket.io-client";
+
+export const socket = io("http://localhost:5000"); // or your backend URL
+window.socket = socket; // so voice.js can access it
 
 function App() {
   return (

@@ -7,3 +7,4 @@ load_dotenv()
 client = MongoClient(os.getenv("MONGO_URI"))
 db = client["canvasconnect"]
 boards_collection = db["whiteboards"]
+whiteboards = db["whiteboards"] 

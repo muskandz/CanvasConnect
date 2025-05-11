@@ -7,8 +7,11 @@ import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { v4 as uuidv4 } from 'uuid';
 import { io } from "socket.io-client";
+import VoiceControls from "../components/VoiceControls";
 
 const socket = io("http://localhost:5000");
+// Make socket available globally for voice chat
+window.socket = socket;
 
 const MODES = { DRAW: "draw", ERASE: "erase" };
 
@@ -19,10 +22,12 @@ export default function WhiteboardEditor() {
   const isDrawing = useRef(false);
   const [redoStack, setRedoStack] = useState([]);
   const [title, setTitle] = useState("Untitled");
-  const [strokeColor, setStrokeColor] = useState("black");
+  const [strokeColor, setStrokeColor] = useState("#000000");
   const [strokeWidth, setStrokeWidth] = useState(2);
   const [mode, setMode] = useState(MODES.DRAW); 
   const layerRef = useRef(null);
+  const [isVoiceConnected, setIsVoiceConnected] = useState(false);
+  const [showAudioTest, setShowAudioTest] = useState(false);
 
   // Load board data when component mounts
   useEffect(() => {
@@ -98,27 +103,6 @@ export default function WhiteboardEditor() {
 
     return () => clearInterval(interval);
   }, [lines, notes]);
-
-  useEffect(() => {
-    const saveSharedBoard = async () => {
-      const res = await fetch('http://localhost:5000/api/save-shared-board', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // if using Firebase auth
-        },
-        body: JSON.stringify({
-          boardId,
-          boardTitle: 'Shared Board',
-          userEmail
-        })
-      });
-      const data = await res.json();
-      console.log('Board saved:', data);
-    };
-  
-    saveSharedBoard();
-  }, []);  
 
   // Drawing handlers
   const handleMouseDown = (e) => {
@@ -243,28 +227,39 @@ export default function WhiteboardEditor() {
   };
 
   const handleNoteChange = (id, newText) => {
-    setNotes(notes.map((note) => (note.id === id ? { ...note, text: newText } : note)));
-    socket.emit('note_updated', { room: id, note: updatedNote });
+    const updatedNote = notes.find(note => note.id === id);
+    if (updatedNote) {
+      updatedNote.text = newText;
+      setNotes(notes.map((note) => (note.id === id ? updatedNote : note)));
+      socket.emit('note_updated', { room: id, note: updatedNote });
+    }
   };
 
   const handleNoteDrag = (id, e) => {
-    const newNotes = notes.map((note) => {
-      if (note.id === id) {
-        return { ...note, x: e.target.x(), y: e.target.y() };
-      }
-      return note;
-    });
-    setNotes(newNotes);
-    socket.emit('note_updated', { room: id, note: updatedNote });
+    const updatedNote = notes.find(note => note.id === id);
+    if (updatedNote) {
+      updatedNote.x = e.target.x();
+      updatedNote.y = e.target.y();
+      
+      const newNotes = notes.map((note) => {
+        if (note.id === id) {
+          return updatedNote;
+        }
+        return note;
+      });
+      
+      setNotes(newNotes);
+      socket.emit('note_updated', { room: id, note: updatedNote });
+    }
   };
 
-  const shareLink = `${window.location.origin}/board/${id}`;
+  const shareLink = `${window.location.origin}/whiteboard/${id}`;
 
-const copyToClipboard = () => {
-  navigator.clipboard.writeText(shareLink).then(() => {
-    alert('Link copied to clipboard!');
-  });
-};
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(shareLink).then(() => {
+      alert('Link copied to clipboard!');
+    });
+  };
 
   return (
     <div>
@@ -319,9 +314,11 @@ const copyToClipboard = () => {
           <button onClick={exportAsPDF} className="bg-purple-500 text-white px-2 py-1 rounded">📄 PDF</button>
           <button onClick={handleUndo}>↩️ Undo</button>
           <button onClick={handleRedo}>↪️ Redo</button>
-          <button onClick={copyToClipboard}>Share</button>
+          <button onClick={copyToClipboard} className="bg-indigo-500 text-white px-2 py-1 rounded">🔗 Share</button>
         </div>
       </div>
+      
+      <VoiceControls roomId={id} />
 
       <div id="whiteboard-stage">
         <Stage
@@ -337,13 +334,14 @@ const copyToClipboard = () => {
               <Line
                 key={index}
                 points={line.points}
-                stroke={line.color || "black"}
+                stroke={line.color || "#000000"}
                 strokeWidth={line.strokeWidth || 2}
                 tension={0.5}
                 lineCap="round"
                 globalCompositeOperation="source-over"
               />
             ))}
+
             {notes.map((note) => (
               <React.Fragment key={note.id}>
                 <Rect
