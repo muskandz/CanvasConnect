@@ -140,13 +140,13 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     debug = os.environ.get("FLASK_ENV") == "development"
     
-    print("🚀 Starting CanvasConnect Backend Server...")
-    print(f"📍 Server will be available at: http://localhost:{port}")
-    print(f"🌐 Environment: {'DEVELOPMENT' if debug else 'PRODUCTION'}")
-    print(f"🔧 CORS Origins: {', '.join(cors_origins)}")
+    print("Starting CanvasConnect Backend Server...")
+    print(f"Server will be available at: http://0.0.0.0:{port}")
+    print(f"Environment: {'DEVELOPMENT' if debug else 'PRODUCTION'}")
+    print(f"CORS Origins: {', '.join(cors_origins)}")
     
     if debug:
-        print("🔧 API endpoints:")
+        print("API endpoints:")
         print("   - GET  /api/health")
         print("   - POST /api/boards")
         print("   - GET  /api/boards/user/<userId>")
@@ -156,4 +156,4 @@ if __name__ == "__main__":
         print("   - GET  /api/activity/user/<userId>")
         print("🔌 Socket.IO enabled for real-time collaboration")
     
-    socketio.run(app, debug=debug, port=port)
+    socketio.run(app, debug=debug, host="0.0.0.0", port=port)
