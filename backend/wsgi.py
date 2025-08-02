@@ -1,16 +1,19 @@
 import os
 from app import app, socketio
 
+# For production deployment (gunicorn)
+application = app
+
 # Production configuration
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     debug = os.environ.get("FLASK_ENV") == "development"
     
-    print(f"🚀 Starting CanvasConnect Backend Server in {'DEVELOPMENT' if debug else 'PRODUCTION'} mode...")
-    print(f"📍 Server will be available on port: {port}")
+    print(f"Starting CanvasConnect Backend Server in {'DEVELOPMENT' if debug else 'PRODUCTION'} mode...")
+    print(f"Server will be available on port: {port}")
     
     if debug:
-        print("🔧 API endpoints:")
+        print("API endpoints:")
         print("   - GET  /api/health")
         print("   - POST /api/boards")
         print("   - GET  /api/boards/user/<userId>")
