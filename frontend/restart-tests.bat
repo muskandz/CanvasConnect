@@ -1,0 +1,6 @@
+@echo off
+echo Clearing cache and restarting tests...
+if exist "quick-test.test.js" del "quick-test.test.js"
+npx vitest --clearCache
+echo Cache cleared. Now running tests...
+npm test
