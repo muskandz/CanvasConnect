@@ -41,8 +41,11 @@ def health_check():
     try:
         # Test database connection
         from db import client
-        client.admin.command('ping')
-        db_status = "connected"
+        if client is not None:
+            client.admin.command('ping')
+            db_status = "connected"
+        else:
+            db_status = "connection failed during startup"
     except Exception as e:
         db_status = f"error: {str(e)}"
     

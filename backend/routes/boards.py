@@ -11,6 +11,9 @@ boards = Blueprint('boards', __name__, url_prefix='/api')
 @boards.route("/boards", methods=["POST"])
 def create_board():
     try:
+        if boards_collection is None:
+            return jsonify({"error": "Database connection not available"}), 503
+            
         print(f"Creating board - Request received at {datetime.utcnow()}")
         data = request.json
         print(f"Board data: {data.get('title', 'Untitled')} - Type: {data.get('type', 'whiteboard')}")
