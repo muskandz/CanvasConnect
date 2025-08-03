@@ -18,15 +18,26 @@ try:
         tz_aware=True                   # Make timezone aware
     )
     
-    # Test the connection
-    client.admin.command('ping')
-    print("✅ MongoDB connection successful")
+    print("MongoDB client created - connection will be tested on first use")
     
 except Exception as e:
-    print(f"❌ MongoDB connection failed: {str(e)}")
+    print(f"MongoDB client creation failed: {str(e)}")
     print("⚠️  Application will continue but database operations will fail")
     client = None
 
 db = client["canvasconnect"] if client else None
 boards_collection = db["whiteboards"] if db else None
-whiteboards = db["whiteboards"] if db else None 
+whiteboards = db["whiteboards"] if db else None
+
+def test_mongodb_connection():
+    """Test MongoDB connection without crashing the app"""
+    try:
+        if client is None:
+            return False, "MongoDB client not initialized"
+        
+        # Test the connection with a short timeout
+        client.admin.command('ping')
+        return True, "Connected"
+        
+    except Exception as e:
+        return False, str(e) 

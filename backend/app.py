@@ -44,13 +44,10 @@ CORS(app, resources={r"/api/*": {"origins": cors_origins}})
 @app.route('/api/health', methods=['GET'])
 def health_check():
     try:
-        # Test database connection
-        from db import client
-        if client is not None:
-            client.admin.command('ping')
-            db_status = "connected"
-        else:
-            db_status = "connection failed during startup"
+        # Test database connection safely
+        from db import test_mongodb_connection
+        is_connected, db_message = test_mongodb_connection()
+        db_status = "connected" if is_connected else f"error: {db_message}"
     except Exception as e:
         db_status = f"error: {str(e)}"
     
