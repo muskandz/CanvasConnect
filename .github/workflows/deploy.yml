@@ -102,17 +102,17 @@ jobs:
           github-comment: false
 
   # Backend Deployment Job (Manual trigger recommended)
-  # deploy-backend:
-  #   needs: [frontend-ci, backend-ci]
-  #   runs-on: ubuntu-latest
-  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-  #
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-  #
-  #     - name: Deploy to Railway
-  #       uses: railwayapp/railway-deploy@v1.0.0
-  #       with:
-  #         railway_token: ${{ secrets.RAILWAY_TOKEN }}
-  #         service: ${{ secrets.RAILWAY_SERVICE_ID }}
+  deploy-backend:
+    needs: [frontend-ci, backend-ci]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Railway
+        uses: railwayapp/railway-deploy@v1.0.0
+        with:
+          railway_token: ${{ secrets.RAILWAY_TOKEN }}
+          service: ${{ secrets.RAILWAY_SERVICE_ID }}
