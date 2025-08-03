@@ -48,14 +48,33 @@ def create_board():
 # Get all boards for a user
 @boards.route("/boards/user/<userId>", methods=["GET"])
 def get_boards(userId):
-    user_boards = boards_collection.find({"userId": userId})
-    return jsonify([board_to_dict(b) for b in user_boards])
+    try:
+        if boards_collection is None:
+            return jsonify({"error": "Database connection not available"}), 503
+            
+        print(f"Getting boards for user: {userId}")
+        user_boards = boards_collection.find({"userId": userId})
+        boards_list = [board_to_dict(b) for b in user_boards]
+        print(f"Found {len(boards_list)} boards for user {userId}")
+        return jsonify(boards_list)
+        
+    except Exception as e:
+        print(f"Error getting boards for user {userId}: {str(e)}")
+        return jsonify({"error": "Failed to get boards", "details": str(e)}), 500
 
 # Delete a board
 @boards.route("/boards/<boardId>", methods=["DELETE"])
 def delete_board(boardId):
-    boards_collection.delete_one({"_id": ObjectId(boardId)})
-    return jsonify({"message": "Deleted"}), 200
+    try:
+        if boards_collection is None:
+            return jsonify({"error": "Database connection not available"}), 503
+            
+        boards_collection.delete_one({"_id": ObjectId(boardId)})
+        return jsonify({"message": "Deleted"}), 200
+        
+    except Exception as e:
+        print(f"Error deleting board {boardId}: {str(e)}")
+        return jsonify({"error": "Failed to delete board", "details": str(e)}), 500
 
 # Delete all user data (for account deletion)
 @boards.route("/user/<userId>/delete-all-data", methods=["DELETE"])
