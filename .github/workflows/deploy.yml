@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+  pull-requests: write
+  
 jobs:
   # Frontend CI Job
   frontend-ci:
@@ -95,6 +99,7 @@ jobs:
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           vercel-args: '--debug'
+          github-comment: false
 
   # Backend Deployment Job (Manual trigger recommended)
   # deploy-backend:
