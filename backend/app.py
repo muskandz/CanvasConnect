@@ -22,7 +22,15 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-i
 # CORS origins from environment or defaults
 cors_origins = os.environ.get('CORS_ORIGINS', 'http://localhost:5173,http://localhost:3000,http://localhost:5000,https://canvas-connect-eight.vercel.app').split(',')
 
-socketio = SocketIO(app, cors_allowed_origins=cors_origins, async_mode='eventlet')
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins=cors_origins, 
+    async_mode='eventlet',
+    transports=['websocket', 'polling'],
+    allow_upgrades=True,
+    ping_timeout=60,
+    ping_interval=25
+)
 
 # Enable CORS to allow frontend (on different port) to communicate with backend
 CORS(app, resources={r"/api/*": {"origins": cors_origins}})

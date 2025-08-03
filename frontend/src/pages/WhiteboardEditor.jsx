@@ -55,7 +55,13 @@ import { BrainstormTopic, BrainstormIdea, BrainstormTimer } from "../components/
 import { MeetingHeader, MeetingSection } from "../components/templates/MeetingComponents";
 import { API_CONFIG } from "../config/api";
 
-const socket = io(API_CONFIG.SOCKET_URL);
+const socket = io(API_CONFIG.SOCKET_URL, {
+  transports: ['websocket', 'polling'],
+  upgrade: true,
+  rememberUpgrade: true,
+  timeout: 20000,
+  forceNew: true
+});
 // Make socket available globally for voice chat
 window.socket = socket;
 
