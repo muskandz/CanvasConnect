@@ -1,6 +1,7 @@
 import { io } from "socket.io-client";
+import { API_CONFIG } from "./config/api.js";
 
-const socket = io("http://localhost:5000");
+const socket = io(API_CONFIG.SOCKET_URL);
 
 socket.on("voice-offer", async ({ offer }) => {
   peerConnection = new RTCPeerConnection(servers);

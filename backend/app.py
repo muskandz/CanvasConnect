@@ -20,7 +20,7 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # CORS origins from environment or defaults
-cors_origins = os.environ.get('CORS_ORIGINS', 'http://localhost:5173,http://localhost:3000,http://localhost:5000').split(',')
+cors_origins = os.environ.get('CORS_ORIGINS', 'http://localhost:5173,http://localhost:3000,http://localhost:5000,https://canvas-connect-eight.vercel.app').split(',')
 
 socketio = SocketIO(app, cors_allowed_origins=cors_origins, async_mode='eventlet')
 

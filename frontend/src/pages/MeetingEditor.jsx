@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { apiClient, API_ENDPOINTS } from "../config/api";
 import {
   ArrowLeft, Save, Plus, Trash2, Edit3, 
   Users, Clock, CheckSquare, Square, 
@@ -44,7 +44,7 @@ export default function MeetingEditor() {
   useEffect(() => {
     const loadMeeting = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/boards/${id}`);
+        const res = await apiClient.get(API_ENDPOINTS.BOARD_BY_ID(id));
         const boardData = res.data;
         
         if (boardData.data) {
@@ -77,7 +77,7 @@ export default function MeetingEditor() {
   // Save meeting
   const saveMeeting = async () => {
     try {
-      await axios.put('http://localhost:5000/api/boards/update', {
+      await apiClient.put(API_ENDPOINTS.UPDATE_BOARD, {
         boardId: id,
         title: meeting.title,
         data: JSON.stringify({

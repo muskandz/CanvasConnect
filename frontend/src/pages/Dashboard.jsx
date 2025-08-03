@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { auth } from "../firebaseConfig";
 import { signOut, onAuthStateChanged } from "firebase/auth";
-import axios from "axios";
+import { apiClient, API_ENDPOINTS } from "../config/api";
 import ShareModal from "../components/ShareModal";
 import CreateModal from "../components/CreateModal";
 import FilterDropdown from "../components/FilterDropdown";
@@ -59,8 +59,8 @@ export default function Dashboard() {
     try {
       // Fetch real data from backend
       const [boardsRes, activityRes] = await Promise.all([
-        axios.get(`http://localhost:5000/api/boards/user/${userId}`).catch(() => ({ data: [] })),
-        axios.get(`http://localhost:5000/api/activity/user/${userId}`).catch(() => ({ data: [] }))
+        apiClient.get(API_ENDPOINTS.BOARDS_BY_USER(userId)).catch(() => ({ data: [] })),
+        apiClient.get(API_ENDPOINTS.USER_ACTIVITY(userId)).catch(() => ({ data: [] }))
       ]);
       
       // Add enhanced properties to real boards
@@ -143,7 +143,7 @@ export default function Dashboard() {
       const templateData = generateTemplateData(boardType, options);
       
       // Create board via backend API
-      const response = await axios.post("http://localhost:5000/api/boards", {
+      const response = await apiClient.post(API_ENDPOINTS.BOARDS, {
         userId: user.uid,
         title: options.title || `Untitled ${boardType}`,
         description: options.description || `A collaborative ${boardType} for team projects`,
@@ -212,7 +212,7 @@ export default function Dashboard() {
           if (confirm("Are you sure you want to delete this board? This action cannot be undone.")) {
             try {
               // Delete from backend
-              await axios.delete(`http://localhost:5000/api/boards/${boardId}`);
+              await apiClient.delete(API_ENDPOINTS.DELETE_BOARD(boardId));
               // Remove from local state
               setBoards(prev => prev.filter(b => b.id !== boardId));
             } catch (err) {
