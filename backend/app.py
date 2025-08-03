@@ -22,6 +22,11 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-i
 # CORS origins from environment or defaults
 cors_origins = os.environ.get('CORS_ORIGINS', 'http://localhost:5173,http://localhost:3000,http://localhost:5000,https://canvas-connect-eight.vercel.app').split(',')
 
+print(f"🔧 Starting CanvasConnect Backend...")
+print(f"🔑 Secret Key: {'SET' if os.environ.get('SECRET_KEY') else 'DEFAULT'}")
+print(f"🌐 CORS Origins: {cors_origins}")
+print(f"🗄️  MongoDB URI: {'SET' if os.environ.get('MONGO_URI') else 'NOT SET'}")
+
 socketio = SocketIO(
     app, 
     cors_allowed_origins=cors_origins, 
