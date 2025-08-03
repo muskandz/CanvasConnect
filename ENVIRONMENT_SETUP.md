@@ -22,8 +22,8 @@ VITE_SOCKET_URL=http://localhost:5000
 ### Production (Netlify/Vercel)
 Set these in your deployment platform's environment variables:
 ```
-VITE_API_BASE_URL=https://your-app-name.onrender.com
-VITE_SOCKET_URL=https://your-app-name.onrender.com
+VITE_API_BASE_URL=https://canvasconnect-fcch.onrender.com
+VITE_SOCKET_URL=https://canvasconnect-fcch.onrender.com
 ```
 
 ## Firebase Setup
@@ -35,7 +35,7 @@ VITE_SOCKET_URL=https://your-app-name.onrender.com
 ## Deployment URLs
 
 - **Frontend (Vercel)**: https://canvas-connect-eight.vercel.app
-- **Backend (Render)**: https://your-app-name.onrender.com
+- **Backend (Render)**: https://canvasconnect-fcch.onrender.com
 
 ## Troubleshooting
 
