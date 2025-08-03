@@ -1,8 +1,12 @@
 [phases.setup]
-nixPkgs = ["python39"]
+nixPkgs = ["python39Full"]
 
 [phases.install]
-cmds = ["pip install --upgrade pip", "pip install -r requirements.txt"]
+cmds = [
+  "python3 -m ensurepip",
+  "python3 -m pip install --upgrade pip",
+  "python3 -m pip install -r requirements.txt"
+]
 
 [start]
 cmd = "gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:$PORT wsgi:app"
