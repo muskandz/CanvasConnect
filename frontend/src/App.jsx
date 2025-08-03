@@ -15,8 +15,9 @@ import BrainstormingEditor from "./pages/BrainstormingEditor";
 import MeetingEditor from "./pages/MeetingEditor";
 import TemplateRouter from "./components/TemplateRouter";
 import io from "socket.io-client";
+import { API_CONFIG } from "./config/api";
 
-export const socket = io("http://localhost:5000"); // Back to original port 5000
+export const socket = io(API_CONFIG.SOCKET_URL);
 window.socket = socket; // so voice.js can access it
 
 function App() {

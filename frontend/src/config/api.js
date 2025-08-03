@@ -4,6 +4,15 @@ export const API_CONFIG = {
   SOCKET_URL: import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000',
 };
 
+// Debug logging in development
+if (import.meta.env.DEV) {
+  console.log('API Config:', {
+    BASE_URL: API_CONFIG.BASE_URL,
+    SOCKET_URL: API_CONFIG.SOCKET_URL,
+    env: import.meta.env.MODE
+  });
+}
+
 // Create axios instance with base configuration
 import axios from 'axios';
 

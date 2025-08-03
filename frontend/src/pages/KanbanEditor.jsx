@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { apiClient, API_ENDPOINTS } from "../config/api";
 import { ArrowLeft, Plus, Edit3, Trash2, GripVertical, Calendar, User, Flag, Clock, Tag, MoreHorizontal, X } from 'lucide-react';
 
 export default function KanbanEditor() {
@@ -37,7 +38,7 @@ export default function KanbanEditor() {
   useEffect(() => {
     const loadBoard = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/boards/${id}`);
+        const res = await apiClient.get(API_ENDPOINTS.BOARD_BY_ID(id));
         const boardData = res.data;
         
         if (boardData.data) {
@@ -70,7 +71,7 @@ export default function KanbanEditor() {
   // Save board data
   const saveBoard = async () => {
     try {
-      await axios.put('http://localhost:5000/api/boards/update', {
+      await apiClient.put(API_ENDPOINTS.UPDATE_BOARD, {
         boardId: id,
         title: board.title,
         data: JSON.stringify({ columns: board.columns }),
