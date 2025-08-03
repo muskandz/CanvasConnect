@@ -38,7 +38,20 @@ CORS(app, resources={r"/api/*": {"origins": cors_origins}})
 # Health check endpoint
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    return jsonify({'status': 'healthy', 'server': 'app.py', 'timestamp': datetime.now(timezone.utc).isoformat()})
+    try:
+        # Test database connection
+        from db import client
+        client.admin.command('ping')
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    
+    return jsonify({
+        'status': 'healthy', 
+        'server': 'app.py', 
+        'database': db_status,
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    })
 
 # Activity endpoint
 @app.route('/api/activity/user/<userId>', methods=['GET'])

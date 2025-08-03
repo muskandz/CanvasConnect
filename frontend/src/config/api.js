@@ -18,7 +18,7 @@ import axios from 'axios';
 
 export const apiClient = axios.create({
   baseURL: API_CONFIG.BASE_URL,
-  timeout: 10000,
+  timeout: 30000, // Increased to 30 seconds for backend database operations
   headers: {
     'Content-Type': 'application/json',
   },

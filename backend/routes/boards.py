@@ -10,25 +10,37 @@ boards = Blueprint('boards', __name__, url_prefix='/api')
 # Create a new board
 @boards.route("/boards", methods=["POST"])
 def create_board():
-    data = request.json
-    board = {
-        "userId": data["userId"],
-        "title": data.get("title", "Untitled"),
-        "description": data.get("description", ""),
-        "type": data.get("type", "whiteboard"),
-        "templateType": data.get("templateType", "whiteboard"),
-        "background": data.get("background", "#ffffff"),
-        "isPublic": data.get("isPublic", False),
-        "createdAt": datetime.utcnow(),
-        "updatedAt": datetime.utcnow(),
-        "data": data.get("data", ""),  # optional board content
-        "notes": data.get("notes", []),  # optional notes
-        "textBoxes": data.get("textBoxes", []),  # ✅ Add textBoxes support
-        "ownerId": data["userId"]  # Add ownerId for compatibility
-    }
-    result = boards_collection.insert_one(board)
-    board["_id"] = result.inserted_id
-    return jsonify(board_to_dict(board)), 201
+    try:
+        print(f"Creating board - Request received at {datetime.utcnow()}")
+        data = request.json
+        print(f"Board data: {data.get('title', 'Untitled')} - Type: {data.get('type', 'whiteboard')}")
+        
+        board = {
+            "userId": data["userId"],
+            "title": data.get("title", "Untitled"),
+            "description": data.get("description", ""),
+            "type": data.get("type", "whiteboard"),
+            "templateType": data.get("templateType", "whiteboard"),
+            "background": data.get("background", "#ffffff"),
+            "isPublic": data.get("isPublic", False),
+            "createdAt": datetime.utcnow(),
+            "updatedAt": datetime.utcnow(),
+            "data": data.get("data", ""),  # optional board content
+            "notes": data.get("notes", []),  # optional notes
+            "textBoxes": data.get("textBoxes", []),  # ✅ Add textBoxes support
+            "ownerId": data["userId"]  # Add ownerId for compatibility
+        }
+        
+        print("Inserting board into database...")
+        result = boards_collection.insert_one(board)
+        board["_id"] = result.inserted_id
+        print(f"Board created successfully with ID: {result.inserted_id}")
+        
+        return jsonify(board_to_dict(board)), 201
+        
+    except Exception as e:
+        print(f"Error creating board: {str(e)}")
+        return jsonify({"error": "Failed to create board", "details": str(e)}), 500
 
 # Get all boards for a user
 @boards.route("/boards/user/<userId>", methods=["GET"])
