@@ -1,5 +1,0 @@
-[phases.setup]
-nixpkgsArchive = "3c5ffcd"
-
-[phases.install]
-cmds = ["pip install -r requirements.txt"]
