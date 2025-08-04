@@ -66,7 +66,7 @@ export default function PresentationEditor() {
   useEffect(() => {
     const loadPresentation = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/boards/${id}`);
+        const res = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
         const boardData = res.data;
         
         if (boardData.data) {
@@ -99,7 +99,7 @@ export default function PresentationEditor() {
   // Save presentation
   const savePresentation = async () => {
     try {
-      await axios.put('http://localhost:5000/api/boards/update', {
+      await axios.put('https://canvasconnect-fcch.onrender.com/api/boards/update', {
         boardId: id,
         title: presentation.title,
         data: JSON.stringify({ slides: presentation.slides }),

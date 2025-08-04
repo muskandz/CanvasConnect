@@ -41,7 +41,7 @@ export default function MindMapEditor() {
   useEffect(() => {
     const loadMindMap = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/boards/${id}`);
+        const res = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
         const boardData = res.data;
         
         if (boardData.data) {
@@ -75,7 +75,7 @@ export default function MindMapEditor() {
   // Save mind map
   const saveMindMap = async () => {
     try {
-      await axios.put('http://localhost:5000/api/boards/update', {
+      await axios.put('https://canvasconnect-fcch.onrender.com/api/boards/update', {
         boardId: id,
         title: mindMap.title,
         data: JSON.stringify({

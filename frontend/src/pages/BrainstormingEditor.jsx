@@ -64,7 +64,7 @@ export default function BrainstormingEditor() {
   useEffect(() => {
     const loadBrainstorming = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/boards/${id}`);
+        const res = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
         const boardData = res.data;
         
         if (boardData.data) {
@@ -97,7 +97,7 @@ export default function BrainstormingEditor() {
   // Save brainstorming
   const saveBrainstorming = async () => {
     try {
-      await axios.put('http://localhost:5000/api/boards/update', {
+      await axios.put('https://canvasconnect-fcch.onrender.com/api/boards/update', {
         boardId: id,
         title: brainstorming.title,
         data: JSON.stringify({

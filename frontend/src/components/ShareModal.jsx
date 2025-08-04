@@ -10,7 +10,7 @@ export default function ShareModal({ isOpen, setIsOpen, boardId }) {
     if (!email) return;
 
     try {
-      const res = await axios.patch(`http://localhost:5000/api/whiteboards/share/${boardId}`, {
+      const res = await axios.patch(`https://canvasconnect-fcch.onrender.com/api/whiteboards/share/${boardId}`, {
         userIdToShare: email
       });
       setStatus(res.data.message);

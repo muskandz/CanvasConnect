@@ -82,7 +82,7 @@ export default function AccountSettings() {
 
   const fetchUserStats = async (userId) => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/boards/user/${userId}`);
+      const response = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/user/${userId}`);
       const boards = response.data;
       
       setUserStats({
@@ -180,7 +180,7 @@ export default function AccountSettings() {
         await reauthenticateWithCredential(user, credential);
 
         // Delete all user's boards and data from backend
-        await axios.delete(`http://localhost:5000/api/user/${user.uid}/delete-all-data`);
+        await axios.delete(`https://canvasconnect-fcch.onrender.com/api/user/${user.uid}/delete-all-data`);
 
         // Delete Firebase account
         await deleteUser(user);

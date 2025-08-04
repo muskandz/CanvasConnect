@@ -18,7 +18,7 @@ export default function TemplateRouter() {
   useEffect(() => {
     const fetchBoardData = async () => {
       try {
-        const response = await axios.get(`http://localhost:5000/api/boards/${id}`);
+        const response = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
         const board = response.data;
         
         // Determine template type from board data

@@ -33,7 +33,7 @@ describe('Socket.IO Integration', () => {
       // When socket.js is imported, it should create a connection
       await import('../socket.js')
       
-      expect(io).toHaveBeenCalledWith('http://localhost:5000')
+      expect(io).toHaveBeenCalledWith('https://canvasconnect-fcch.onrender.com')
     })
 
     it('socket instance has required methods', () => {
