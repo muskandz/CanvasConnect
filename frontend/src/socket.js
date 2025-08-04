@@ -1,7 +1,15 @@
 import { io } from "socket.io-client";
 import { API_CONFIG } from "./config/api.js";
 
-const socket = io(API_CONFIG.SOCKET_URL);
+const socket = io(API_CONFIG.SOCKET_URL, {
+  transports: ['websocket', 'polling'],
+  timeout: 20000,
+  forceNew: true,
+  reconnection: true,
+  reconnectionDelay: 1000,
+  reconnectionAttempts: 5,
+  maxReconnectionAttempts: 5
+});
 
 socket.on("voice-offer", async ({ offer }) => {
   peerConnection = new RTCPeerConnection(servers);
