@@ -1,7 +1,6 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Stage, Layer, Line, Rect, Text, Circle } from "react-konva"; // Added Circle for eraser cursor
 import { useParams, useNavigate } from "react-router-dom";
-import axios from "axios";
 import { apiClient, API_ENDPOINTS } from "../config/api";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
