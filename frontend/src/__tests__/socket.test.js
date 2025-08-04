@@ -4,10 +4,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock the environment variable for testing purposes.
-// This is the key fix to ensure the test expects the correct URL.
 vi.stubGlobal('import.meta.env', { VITE_SOCKET_URL: 'https://canvasconnect-fcch.onrender.com' });
 
-// Mock Socket.IO client
+// Define the mock socket instance
 const mockSocket = {
   on: vi.fn(),
   emit: vi.fn(),
@@ -17,8 +16,12 @@ const mockSocket = {
   connected: true
 };
 
+// Define the spy for the 'io' function
+const ioSpy = vi.fn(() => mockSocket);
+
+// Mock the 'socket.io-client' module, returning our spy
 vi.mock('socket.io-client', () => ({
-  io: vi.fn(() => mockSocket)
+  io: ioSpy
 }));
 
 describe('Socket.IO Integration', () => {
@@ -45,8 +48,8 @@ describe('Socket.IO Integration', () => {
         maxReconnectionAttempts: 5
       };
       
-      // Expect the `io` function to be called with the mocked URL and the correct options.
-      expect(io).toHaveBeenCalledWith('https://canvasconnect-fcch.onrender.com', expectedOptions);
+      // Expect the 'io' spy to have been called with the correct arguments.
+      expect(ioSpy).toHaveBeenCalledWith('https://canvasconnect-fcch.onrender.com', expectedOptions);
     });
 
     it('socket instance has required methods', () => {
