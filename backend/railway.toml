@@ -1,5 +1,0 @@
-[deploy]
-startCommand = "python3 wsgi.py"
-
-[env]
-PORT = { default = "5000" }
