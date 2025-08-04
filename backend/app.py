@@ -55,7 +55,18 @@ def health_check():
         'status': 'healthy', 
         'server': 'app.py', 
         'database': db_status,
-        'timestamp': datetime.now(timezone.utc).isoformat()
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'version': 'v1.1-mock-data-enabled'
+    })
+
+# Quick deployment test endpoint
+@app.route('/api/deployment-test', methods=['GET'])
+def deployment_test():
+    return jsonify({
+        'status': 'SUCCESS',
+        'message': 'New deployment is live with mock data support!',
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'mock_data_enabled': True
     })
 
 # Activity endpoint
@@ -82,6 +93,10 @@ def get_user_activity(userId):
 
 # Register Blueprints
 app.register_blueprint(boards)
+
+# Add test routes to verify deployment
+from test_routes import test
+app.register_blueprint(test)
 
 @socketio.on('connect')
 def handle_connect():
