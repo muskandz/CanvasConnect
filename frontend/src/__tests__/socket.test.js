@@ -1,7 +1,11 @@
-// Socket Integration Tests
-// These tests verify that Socket.IO integration works correctly
+// src/__tests__/socket.test.js
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+// Import utilities from vitest
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// Mock the environment variable for testing purposes.
+// This is the key fix to ensure the test expects the correct URL.
+vi.stubGlobal('import.meta.env', { VITE_SOCKET_URL: 'https://canvasconnect-fcch.onrender.com' });
 
 // Mock Socket.IO client
 const mockSocket = {
@@ -11,59 +15,65 @@ const mockSocket = {
   disconnect: vi.fn(),
   connect: vi.fn(),
   connected: true
-}
+};
 
 vi.mock('socket.io-client', () => ({
   io: vi.fn(() => mockSocket)
-}))
+}));
 
 describe('Socket.IO Integration', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-  })
+    vi.clearAllMocks();
+  });
 
   afterEach(() => {
-    vi.restoreAllMocks()
-  })
+    vi.restoreAllMocks();
+  });
 
   describe('Socket Connection', () => {
     it('creates socket connection to correct URL', async () => {
-      const { io } = await import('socket.io-client')
+      // The socket.js file will now use the mocked VITE_SOCKET_URL
+      await import('../socket.js');
       
-      // When socket.js is imported, it should create a connection
-      await import('../socket.js')
+      const expectedOptions = {
+        transports: ['websocket', 'polling'],
+        timeout: 20000,
+        forceNew: true,
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 5,
+        maxReconnectionAttempts: 5
+      };
       
-      expect(io).toHaveBeenCalledWith('https://canvasconnect-fcch.onrender.com')
-    })
+      // Expect the `io` function to be called with the mocked URL and the correct options.
+      expect(io).toHaveBeenCalledWith('https://canvasconnect-fcch.onrender.com', expectedOptions);
+    });
 
     it('socket instance has required methods', () => {
-      expect(mockSocket.on).toBeDefined()
-      expect(mockSocket.emit).toBeDefined()
-      expect(mockSocket.disconnect).toBeDefined()
-      expect(mockSocket.connect).toBeDefined()
-    })
-  })
+      expect(mockSocket.on).toBeDefined();
+      expect(mockSocket.emit).toBeDefined();
+      expect(mockSocket.disconnect).toBeDefined();
+      expect(mockSocket.connect).toBeDefined();
+    });
+  });
 
   describe('Socket Methods', () => {
     it('can emit events', () => {
-      mockSocket.emit('test-event', { data: 'test' })
-      
-      expect(mockSocket.emit).toHaveBeenCalledWith('test-event', { data: 'test' })
-    })
+      mockSocket.emit('test-event', { data: 'test' });
+      expect(mockSocket.emit).toHaveBeenCalledWith('test-event', { data: 'test' });
+    });
 
     it('can register event listeners', () => {
-      const callback = vi.fn()
-      mockSocket.on('test-event', callback)
-      
-      expect(mockSocket.on).toHaveBeenCalledWith('test-event', callback)
-    })
+      const callback = vi.fn();
+      mockSocket.on('test-event', callback);
+      expect(mockSocket.on).toHaveBeenCalledWith('test-event', callback);
+    });
 
     it('can disconnect socket', () => {
-      mockSocket.disconnect()
-      
-      expect(mockSocket.disconnect).toHaveBeenCalled()
-    })
-  })
+      mockSocket.disconnect();
+      expect(mockSocket.disconnect).toHaveBeenCalled();
+    });
+  });
 
   describe('Error Handling', () => {
     it('handles connection errors gracefully', () => {
@@ -71,22 +81,22 @@ describe('Socket.IO Integration', () => {
         ...mockSocket,
         on: vi.fn((event, callback) => {
           if (event === 'connect_error') {
-            callback(new Error('Connection failed'))
+            callback(new Error('Connection failed'));
           }
         })
-      }
+      };
 
       vi.doMock('socket.io-client', () => ({
         io: vi.fn(() => mockSocketWithError)
-      }))
+      }));
 
       // Should not throw when importing
       expect(async () => {
-        await import('../socket.js')
-      }).not.toThrow()
-    })
-  })
-})
+        await import('../socket.js');
+      }).not.toThrow();
+    });
+  });
+});
 
 describe('WebRTC Integration', () => {
   beforeEach(() => {
@@ -99,60 +109,58 @@ describe('WebRTC Integration', () => {
       setLocalDescription: vi.fn(() => Promise.resolve()),
       createAnswer: vi.fn(() => Promise.resolve({ type: 'answer', sdp: 'mock-sdp' })),
       createOffer: vi.fn(() => Promise.resolve({ type: 'offer', sdp: 'mock-sdp' }))
-    }))
+    }));
 
-    global.RTCSessionDescription = vi.fn((description) => description)
+    global.RTCSessionDescription = vi.fn((description) => description);
 
     global.navigator.mediaDevices = {
       getUserMedia: vi.fn(() => Promise.resolve({
         getTracks: () => [{ stop: vi.fn() }]
       }))
-    }
+    };
 
     global.Audio = vi.fn(() => ({
       play: vi.fn(() => Promise.resolve()),
       srcObject: null
-    }))
-  })
+    }));
+  });
 
   describe('WebRTC API Availability', () => {
     it('has RTCPeerConnection available', () => {
-      expect(global.RTCPeerConnection).toBeDefined()
-    })
+      expect(global.RTCPeerConnection).toBeDefined();
+    });
 
     it('has navigator.mediaDevices available', () => {
-      expect(global.navigator.mediaDevices).toBeDefined()
-      expect(global.navigator.mediaDevices.getUserMedia).toBeDefined()
-    })
+      expect(global.navigator.mediaDevices).toBeDefined();
+      expect(global.navigator.mediaDevices.getUserMedia).toBeDefined();
+    });
 
     it('can create RTCPeerConnection instance', () => {
-      const pc = new RTCPeerConnection()
-      
-      expect(pc).toBeDefined()
-      expect(pc.addTrack).toBeDefined()
-      expect(pc.createOffer).toBeDefined()
-      expect(pc.createAnswer).toBeDefined()
-    })
-  })
+      const pc = new RTCPeerConnection();
+      expect(pc).toBeDefined();
+      expect(pc.addTrack).toBeDefined();
+      expect(pc.createOffer).toBeDefined();
+      expect(pc.createAnswer).toBeDefined();
+    });
+  });
 
   describe('Media Access', () => {
     it('can request user media', async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      
-      expect(stream).toBeDefined()
-      expect(stream.getTracks).toBeDefined()
-    })
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      expect(stream).toBeDefined();
+      expect(stream.getTracks).toBeDefined();
+    });
 
     it('handles media access errors', async () => {
       global.navigator.mediaDevices.getUserMedia = vi.fn(() => 
         Promise.reject(new Error('Permission denied'))
-      )
+      );
 
       try {
-        await navigator.mediaDevices.getUserMedia({ audio: true })
+        await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch (error) {
-        expect(error.message).toBe('Permission denied')
+        expect(error.message).toBe('Permission denied');
       }
-    })
-  })
-})
+    });
+  });
+});
