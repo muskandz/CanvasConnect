@@ -13,15 +13,18 @@ def connect_to_mongodb():
     global client, db, boards_collection, whiteboards
 
     mongo_uri = os.getenv("MONGO_URI")
+    print(f"MONGO_URI exists: {'Yes' if mongo_uri else 'No'}")
+    
     if not mongo_uri:
         print("MONGO_URI not found in environment variables.")
         return False
 
     try:
+        print("Attempting MongoDB connection...")
         client = MongoClient(
             mongo_uri,
-            serverSelectionTimeoutMS=30000,
-            connectTimeoutMS=20000,
+            serverSelectionTimeoutMS=10000,  # Reduced timeout for faster feedback
+            connectTimeoutMS=10000,
             socketTimeoutMS=60000,
             maxPoolSize=10,
             minPoolSize=1,
@@ -31,6 +34,7 @@ def connect_to_mongodb():
         )
 
         # Ping to check connection
+        print("Testing connection with ping...")
         client.admin.command("ping")
         print("MongoDB connection successful")
 
@@ -49,11 +53,16 @@ def test_mongodb_connection():
     """Test MongoDB connection without crashing the app"""
     try:
         if client is None:
-            return False, "MongoDB client not initialized"
+            print("Client is None, attempting reconnection...")
+            success = connect_to_mongodb()
+            if not success:
+                return False, "Failed to connect"
+        
         client.admin.command("ping")
         return True, "Connected"
     except Exception as e:
         return False, str(e)
 
-# Connect on module load
-connect_to_mongodb()
+print("Initializing MongoDB connection...")
+connection_success = connect_to_mongodb()
+print(f"Initial connection result: {'SUCCESS' if connection_success else 'FAILED'}")
