@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { apiClient, API_ENDPOINTS } from "../config/api";
+import axios from 'axios';
 import { ArrowLeft, Plus, Edit3, Trash2, GripVertical, Calendar, User } from 'lucide-react';
 
 export default function KanbanEditor() {
@@ -28,7 +28,7 @@ export default function KanbanEditor() {
   useEffect(() => {
     const loadBoard = async () => {
       try {
-        const res = await apiClient.get(API_ENDPOINTS.BOARD_BY_ID(id));
+        const res = await axios.get(`https://canvasconnect-fcch.onrender.com//api/boards/${id}`);
         const boardData = res.data;
         
         if (boardData.data) {
@@ -61,7 +61,7 @@ export default function KanbanEditor() {
   // Save board data
   const saveBoard = async () => {
     try {
-      await apiClient.put(API_ENDPOINTS.UPDATE_BOARD, {
+      await axios.put('https://canvasconnect-fcch.onrender.com/api/boards/update', {
         boardId: id,
         title: board.title,
         data: JSON.stringify({ columns: board.columns }),

@@ -5,7 +5,7 @@ import { io } from "socket.io-client";
 // Use Vite's environment variables to get the correct URL for development and production.
 // VITE_SOCKET_URL should be set in .env files (e.g., .env.development, .env.production).
 // For local testing, it will default to 'http://localhost:5000'.
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || `https://canvasconnect-fcch.onrender.com`;
 
 // Global variables for WebRTC, you should manage these in a component state
 // for a real application, but for now we'll keep them as globals to match your code structure.
@@ -85,5 +85,14 @@ socket.on("ice-candidate", ({ candidate }) => {
     peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
   }
 });
+
+function closeVoiceCall() {
+  if (peerConnection) {
+    peerConnection.getSenders().forEach(sender => sender.track?.stop());
+    peerConnection.close();
+    peerConnection = null;
+  }
+}
+
 
 export default socket;

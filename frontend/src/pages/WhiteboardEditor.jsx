@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Stage, Layer, Line, Rect, Text, Circle } from "react-konva"; // Added Circle for eraser cursor
 import { useParams, useNavigate } from "react-router-dom";
-import { apiClient, API_ENDPOINTS } from "../config/api";
+import axios from "axios";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { v4 as uuidv4 } from 'uuid';
@@ -52,15 +52,8 @@ import { FlowchartStart, FlowchartEnd, FlowchartProcess, FlowchartDecision, Flow
 import { PresentationSlide } from "../components/templates/PresentationComponents";
 import { BrainstormTopic, BrainstormIdea, BrainstormTimer } from "../components/templates/BrainstormComponents";
 import { MeetingHeader, MeetingSection } from "../components/templates/MeetingComponents";
-import { API_CONFIG } from "../config/api";
 
-const socket = io(API_CONFIG.SOCKET_URL, {
-  transports: ['websocket', 'polling'],
-  upgrade: true,
-  rememberUpgrade: true,
-  timeout: 20000,
-  forceNew: true
-});
+const socket = io(`https://canvasconnect-fcch.onrender.com`); // Back to port 5000
 // Make socket available globally for voice chat
 window.socket = socket;
 
@@ -169,7 +162,7 @@ export default function WhiteboardEditor() {
     // Force immediate save after creating text box
     setTimeout(() => {
       console.log("Force saving after text box creation");
-      apiClient.put(API_ENDPOINTS.UPDATE_BOARD, {
+      axios.put(`https://canvasconnect-fcch.onrender.com/api/boards/update`, {
         boardId: id,
         data: lines,
         notes: notes,
@@ -212,7 +205,7 @@ export default function WhiteboardEditor() {
     // Force immediate save after text change
     setTimeout(() => {
       console.log("Force saving after text change");
-      apiClient.put(API_ENDPOINTS.UPDATE_BOARD, {
+      axios.put(`https://canvasconnect-fcch.onrender.com/api/boards/update`, {
         boardId: id,
         data: lines,
         notes: notes,
@@ -741,7 +734,7 @@ export default function WhiteboardEditor() {
   // Load board data when component mounts
   useEffect(() => {
     // Test which backend server is running
-    apiClient.get(API_ENDPOINTS.HEALTH)
+    axios.get(`https://canvasconnect-fcch.onrender.com/api/health`)
       .then(response => {
         console.log("Backend server info:", response.data);
       })
@@ -751,7 +744,7 @@ export default function WhiteboardEditor() {
       
     const fetchBoardData = async () => {
       try {
-        const res = await apiClient.get(API_ENDPOINTS.BOARD_BY_ID(id));
+        const res = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
         const board = res.data;
         console.log("Loaded board:", board);
         
@@ -814,7 +807,7 @@ export default function WhiteboardEditor() {
       if (lines.length > 0 || templateData.length > 0 || textBoxes.length > 0 || notes.length > 0) {
         console.log("Auto-saving with textBoxes:", textBoxes);
         const dataToSave = templateData.length > 0 ? templateData : lines;
-        apiClient.put(API_ENDPOINTS.UPDATE_BOARD, {
+        axios.put(`https://canvasconnect-fcch.onrender.com/api/boards/update`, {
           boardId: id,
           data: dataToSave, // Send data directly, not stringified
           notes: notes,
@@ -926,7 +919,7 @@ export default function WhiteboardEditor() {
     try {
       console.log("Manual save with textBoxes:", textBoxes);
       setSaveStatus('saving');
-      await apiClient.put(API_ENDPOINTS.UPDATE_BOARD, {
+      await axios.put(`https://canvasconnect-fcch.onrender.com/api/boards/update`, {
         boardId: id,
         data: lines,
         notes: notes,
@@ -1206,7 +1199,7 @@ export default function WhiteboardEditor() {
               onChange={(e) => setTitle(e.target.value)}
               onBlur={async () => {
                 try {
-                  await apiClient.put(API_ENDPOINTS.UPDATE_BOARD, {
+                  await axios.put(`https://canvasconnect-fcch.onrender.com/api/boards/update`, {
                     boardId: id,
                     title: title,
                   });

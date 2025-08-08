@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { auth } from "../firebaseConfig";
 import { signOut, onAuthStateChanged } from "firebase/auth";
-import { apiClient, API_ENDPOINTS } from "../config/api";
+import axios from "axios";
 import ShareModal from "../components/ShareModal";
 import CreateModal from "../components/CreateModal";
 import FilterDropdown from "../components/FilterDropdown";
@@ -59,8 +59,8 @@ export default function Dashboard() {
     try {
       // Fetch real data from backend
       const [boardsRes, activityRes] = await Promise.all([
-        apiClient.get(API_ENDPOINTS.BOARDS_BY_USER(userId)).catch(() => ({ data: [] })),
-        apiClient.get(API_ENDPOINTS.USER_ACTIVITY(userId)).catch(() => ({ data: [] }))
+        axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/user/${userId}`).catch(() => ({ data: [] })),
+        axios.get(`https://canvasconnect-fcch.onrender.com/api/activity/user/${userId}`).catch(() => ({ data: [] }))
       ]);
       
       // Add enhanced properties to real boards
@@ -143,7 +143,7 @@ export default function Dashboard() {
       const templateData = generateTemplateData(boardType, options);
       
       // Create board via backend API
-      const response = await apiClient.post(API_ENDPOINTS.BOARDS, {
+      const response = await axios.post("https://canvasconnect-fcch.onrender.com/api/boards", {
         userId: user.uid,
         title: options.title || `Untitled ${boardType}`,
         description: options.description || `A collaborative ${boardType} for team projects`,
@@ -212,7 +212,7 @@ export default function Dashboard() {
           if (confirm("Are you sure you want to delete this board? This action cannot be undone.")) {
             try {
               // Delete from backend
-              await apiClient.delete(API_ENDPOINTS.DELETE_BOARD(boardId));
+              await axios.delete(`https://canvasconnect-fcch.onrender.com/api/boards/${boardId}`);
               // Remove from local state
               setBoards(prev => prev.filter(b => b.id !== boardId));
             } catch (err) {

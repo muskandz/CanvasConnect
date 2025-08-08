@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { apiClient, API_ENDPOINTS } from "../config/api";
+import axios from 'axios';
 import {
   ArrowLeft, Save, Plus, Trash2, Edit3, 
   Users, Clock, CheckSquare, Square, 
@@ -44,7 +44,7 @@ export default function MeetingEditor() {
   useEffect(() => {
     const loadMeeting = async () => {
       try {
-        const res = await apiClient.get(API_ENDPOINTS.BOARD_BY_ID(id));
+        const res = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
         const boardData = res.data;
         
         if (boardData.data) {
@@ -77,7 +77,7 @@ export default function MeetingEditor() {
   // Save meeting
   const saveMeeting = async () => {
     try {
-      await apiClient.put(API_ENDPOINTS.UPDATE_BOARD, {
+      await axios.put('https://canvasconnect-fcch.onrender.com/api/boards/update', {
         boardId: id,
         title: meeting.title,
         data: JSON.stringify({

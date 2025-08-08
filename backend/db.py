@@ -4,43 +4,56 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-try:
-    client = MongoClient(
-        os.getenv("MONGO_URI"),
-        serverSelectionTimeoutMS=30000,
-        connectTimeoutMS=20000,
-        socketTimeoutMS=60000,
-        maxPoolSize=10,
-        minPoolSize=1,
-        maxIdleTimeMS=45000,
-        retryWrites=True,
-        tz_aware=True
-    )
+client = None
+db = None
+boards_collection = None
+whiteboards = None
+
+def connect_to_mongodb():
+    global client, db, boards_collection, whiteboards
+
+    mongo_uri = os.getenv("MONGO_URI")
+    if not mongo_uri:
+        print("MONGO_URI not found in environment variables.")
+        return False
 
     try:
-        client.admin.command('ping')
-        print("MongoDB connection successful")
-    except Exception as ping_err:
-        print(f"MongoDB ping failed: {ping_err}")
-        print("Database unreachable - falling back to mock data")
-        client = None
-except Exception as e:
-    print(f"MongoDB client creation failed: {e}")
-    print("Application will continue but database operations will fail")
-    client = None
+        client = MongoClient(
+            mongo_uri,
+            serverSelectionTimeoutMS=30000,
+            connectTimeoutMS=20000,
+            socketTimeoutMS=60000,
+            maxPoolSize=10,
+            minPoolSize=1,
+            maxIdleTimeMS=45000,
+            retryWrites=True,
+            tz_aware=True
+        )
 
-db = client["canvasconnect"] if client is not None else None
-boards_collection = db["whiteboards"] if db is not None else None
-whiteboards = db["whiteboards"] if db is not None else None
+        # Ping to check connection
+        client.admin.command("ping")
+        print("MongoDB connection successful")
+
+        db = client["canvasconnect"]
+        boards_collection = db["whiteboards"]
+        whiteboards = db["whiteboards"]
+        return True
+
+    except Exception as e:
+        print(f"MongoDB connection failed: {e}")
+        client = None
+        db = None
+        return False
 
 def test_mongodb_connection():
     """Test MongoDB connection without crashing the app"""
     try:
         if client is None:
             return False, "MongoDB client not initialized"
-        
-        client.admin.command('ping')
+        client.admin.command("ping")
         return True, "Connected"
-        
     except Exception as e:
-        return False, str(e) 
+        return False, str(e)
+
+# Connect on module load
+connect_to_mongodb()
