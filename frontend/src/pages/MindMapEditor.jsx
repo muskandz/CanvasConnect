@@ -13,6 +13,8 @@ export default function MindMapEditor() {
   const [isDragging, setIsDragging] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://canvasconnect-fcch.onrender.com';
+  
   const [mindMap, setMindMap] = useState({
     title: 'Mind Map',
     centerNode: {
@@ -41,7 +43,7 @@ export default function MindMapEditor() {
   useEffect(() => {
     const loadMindMap = async () => {
       try {
-        const res = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
+        const res = await axios.get(`${API_BASE_URL}/api/boards/${id}`);
         const boardData = res.data;
         
         if (boardData.data) {
@@ -75,7 +77,7 @@ export default function MindMapEditor() {
   // Save mind map
   const saveMindMap = async () => {
     try {
-      await axios.put('https://canvasconnect-fcch.onrender.com/api/boards/update', {
+      await axios.put(`${API_BASE_URL}/api/boards/update`, {
         boardId: id,
         title: mindMap.title,
         data: JSON.stringify({
@@ -217,6 +219,41 @@ export default function MindMapEditor() {
     setDragOffset({ x: 0, y: 0 });
   };
 
+  // Touch handlers for mobile support
+  const handleTouchStart = (e, nodeId) => {
+    e.preventDefault(); // Prevent default touch behaviors
+    
+    setIsDragging(nodeId);
+    const rect = svgRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const node = nodeId === 'center' 
+      ? mindMap.centerNode 
+      : mindMap.nodes.find(n => n.id === nodeId);
+    
+    setDragOffset({
+      x: touch.clientX - rect.left - node.x,
+      y: touch.clientY - rect.top - node.y
+    });
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isDragging) return;
+    e.preventDefault(); // Prevent scrolling while dragging
+    
+    const rect = svgRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const newX = touch.clientX - rect.left - dragOffset.x;
+    const newY = touch.clientY - rect.top - dragOffset.y;
+    
+    updateNode(isDragging, { x: newX, y: newY });
+  };
+
+  const handleTouchEnd = (e) => {
+    e.preventDefault();
+    setIsDragging(null);
+    setDragOffset({ x: 0, y: 0 });
+  };
+
   // Get node by ID
   const getNode = (nodeId) => {
     return nodeId === 'center' 
@@ -303,6 +340,9 @@ export default function MindMapEditor() {
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{ touchAction: 'none' }}
         >
           {/* Connections */}
           <g>
@@ -329,6 +369,7 @@ export default function MindMapEditor() {
               strokeWidth={selectedNode === 'center' ? '3' : '2'}
               className="cursor-move"
               onMouseDown={(e) => handleMouseDown(e, 'center')}
+              onTouchStart={(e) => handleTouchStart(e, 'center')}
               onClick={() => setSelectedNode('center')}
               onDoubleClick={() => setEditingNode('center')}
               onContextMenu={(e) => {
@@ -381,6 +422,7 @@ export default function MindMapEditor() {
                 strokeWidth={selectedNode === node.id ? '3' : '2'}
                 className="cursor-move"
                 onMouseDown={(e) => handleMouseDown(e, node.id)}
+                onTouchStart={(e) => handleTouchStart(e, node.id)}
                 onClick={() => setSelectedNode(node.id)}
                 onDoubleClick={() => setEditingNode(node.id)}
                 onContextMenu={(e) => {
