@@ -279,6 +279,54 @@ function FlowchartEditor() {
     setDragStart({ x: 0, y: 0 });
   };
 
+  // Touch handlers for mobile support
+  const handleNodeTouchStart = (event, nodeId) => {
+    event.preventDefault(); // Prevent default touch behaviors
+    event.stopPropagation();
+    
+    if (connecting) {
+      if (connecting !== nodeId) {
+        addConnection(connecting, nodeId);
+      }
+      setConnecting(null);
+      return;
+    }
+    setSelectedNode(nodeId);
+    setDraggedNode(nodeId);
+    setIsDragging(true);
+
+    const touch = event.touches[0];
+    const rect = svgRef.current.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+    const node = flowchart.nodes.find(n => n.id === nodeId);
+    setDragStart({
+      x: x - node.x,
+      y: y - node.y
+    });
+  };
+
+  const handleTouchMove = (event) => {
+    if (!isDragging || !draggedNode) return;
+    event.preventDefault(); // Prevent scrolling while dragging
+    
+    const touch = event.touches[0];
+    const rect = svgRef.current.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+    updateNode(draggedNode, {
+      x: x - dragStart.x,
+      y: y - dragStart.y
+    });
+  };
+
+  const handleTouchEnd = (event) => {
+    event.preventDefault();
+    setIsDragging(false);
+    setDraggedNode(null);
+    setDragStart({ x: 0, y: 0 });
+  };
+
   const startConnecting = () => {
     if (selectedNode) {
       setConnecting(selectedNode);
@@ -313,6 +361,7 @@ function FlowchartEditor() {
       strokeWidth: isSelected ? 3 : 2,
       className: 'cursor-move',
       onMouseDown: (e) => handleNodeMouseDown(e, node.id),
+      onTouchStart: (e) => handleNodeTouchStart(e, node.id),
       onDoubleClick: () => setEditingNode(node.id)
     };
 
@@ -530,12 +579,15 @@ function FlowchartEditor() {
           ref={svgRef}
           className="w-full h-full"
           style={{
-            cursor: selectedTool === 'select' ? 'default' : 'crosshair'
+            cursor: selectedTool === 'select' ? 'default' : 'crosshair',
+            touchAction: 'none'
           }}
           onClick={handleCanvasClick}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
           {/* Grid */}
           {showGrid && (
