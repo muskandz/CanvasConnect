@@ -5,12 +5,13 @@ import axios from "axios";
 export default function ShareModal({ isOpen, setIsOpen, boardId }) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("");
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://canvasconnect-fcch.onrender.com';
 
   const handleShare = async () => {
     if (!email) return;
 
     try {
-      const res = await axios.patch(`https://canvasconnect-fcch.onrender.com/api/whiteboards/share/${boardId}`, {
+      const res = await axios.patch(`${API_BASE_URL}/api/whiteboards/share/${boardId}`, {
         userIdToShare: email
       });
       setStatus(res.data.message);

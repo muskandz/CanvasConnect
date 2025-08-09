@@ -1,11 +1,10 @@
 // src/socket.js
 
 import { io } from "socket.io-client";
+import { API_CONFIG } from './config/api.js';
 
-// Use Vite's environment variables to get the correct URL for development and production.
-// VITE_SOCKET_URL should be set in .env files (e.g., .env.development, .env.production).
-// For local testing, it will default to 'http://localhost:5000'.
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || `https://canvasconnect-fcch.onrender.com`;
+// Use the API configuration to get the correct socket URL
+const SOCKET_URL = API_CONFIG.SOCKET_URL;
 
 // Global variables for WebRTC, you should manage these in a component state
 // for a real application, but for now we'll keep them as globals to match your code structure.

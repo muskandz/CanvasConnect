@@ -3,11 +3,15 @@ import { useNavigate } from "react-router-dom";
 import { auth } from "../firebaseConfig";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import axios from "axios";
+import { API_CONFIG } from "../config/api";
 import ShareModal from "../components/ShareModal";
 import CreateModal from "../components/CreateModal";
 import FilterDropdown from "../components/FilterDropdown";
 import EmptyState from "../components/EmptyState";
 import BoardCard from "../components/BoardCard";
+
+// API configuration
+const API_BASE_URL = API_CONFIG.BASE_URL;
 import ThemeToggle from "../components/ThemeToggle";
 import { generateTemplateData } from "../utils/boardTemplates";
 import { 
@@ -59,8 +63,8 @@ export default function Dashboard() {
     try {
       // Fetch real data from backend
       const [boardsRes, activityRes] = await Promise.all([
-        axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/user/${userId}`).catch(() => ({ data: [] })),
-        axios.get(`https://canvasconnect-fcch.onrender.com/api/activity/user/${userId}`).catch(() => ({ data: [] }))
+        axios.get(`${API_BASE_URL}/api/boards/user/${userId}`).catch(() => ({ data: [] })),
+        axios.get(`${API_BASE_URL}/api/activity/user/${userId}`).catch(() => ({ data: [] }))
       ]);
       
       // Add enhanced properties to real boards
@@ -143,7 +147,7 @@ export default function Dashboard() {
       const templateData = generateTemplateData(boardType, options);
       
       // Create board via backend API
-      const response = await axios.post("https://canvasconnect-fcch.onrender.com/api/boards", {
+      const response = await axios.post(`${API_BASE_URL}/api/boards`, {
         userId: user.uid,
         title: options.title || `Untitled ${boardType}`,
         description: options.description || `A collaborative ${boardType} for team projects`,
@@ -212,7 +216,7 @@ export default function Dashboard() {
           if (confirm("Are you sure you want to delete this board? This action cannot be undone.")) {
             try {
               // Delete from backend
-              await axios.delete(`https://canvasconnect-fcch.onrender.com/api/boards/${boardId}`);
+              await axios.delete(`${API_BASE_URL}/api/boards/${boardId}`);
               // Remove from local state
               setBoards(prev => prev.filter(b => b.id !== boardId));
             } catch (err) {

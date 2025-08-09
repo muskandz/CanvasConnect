@@ -11,6 +11,8 @@ export default function MeetingEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
   
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://canvasconnect-fcch.onrender.com';
+  
   const [meeting, setMeeting] = useState({
     title: 'Meeting Notes',
     date: new Date().toISOString().split('T')[0],
@@ -44,7 +46,7 @@ export default function MeetingEditor() {
   useEffect(() => {
     const loadMeeting = async () => {
       try {
-        const res = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
+        const res = await axios.get(`${API_BASE_URL}/api/boards/${id}`);
         const boardData = res.data;
         
         if (boardData.data) {
@@ -77,7 +79,7 @@ export default function MeetingEditor() {
   // Save meeting
   const saveMeeting = async () => {
     try {
-      await axios.put('https://canvasconnect-fcch.onrender.com/api/boards/update', {
+      await axios.put(`${API_BASE_URL}/api/boards/update`, {
         boardId: id,
         title: meeting.title,
         data: JSON.stringify({

@@ -33,6 +33,7 @@ import {
 
 export default function AccountSettings() {
   const navigate = useNavigate();
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://canvasconnect-fcch.onrender.com';
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -82,7 +83,7 @@ export default function AccountSettings() {
 
   const fetchUserStats = async (userId) => {
     try {
-      const response = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/user/${userId}`);
+      const response = await axios.get(`${API_BASE_URL}/api/boards/user/${userId}`);
       const boards = response.data;
       
       setUserStats({
@@ -180,7 +181,7 @@ export default function AccountSettings() {
         await reauthenticateWithCredential(user, credential);
 
         // Delete all user's boards and data from backend
-        await axios.delete(`https://canvasconnect-fcch.onrender.com/api/user/${user.uid}/delete-all-data`);
+        await axios.delete(`${API_BASE_URL}/api/user/${user.uid}/delete-all-data`);
 
         // Delete Firebase account
         await deleteUser(user);

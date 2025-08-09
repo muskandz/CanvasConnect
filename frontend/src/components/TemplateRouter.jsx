@@ -11,6 +11,7 @@ import MeetingEditor from '../pages/MeetingEditor';
 
 export default function TemplateRouter() {
   const { id } = useParams();
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://canvasconnect-fcch.onrender.com';
   const [templateType, setTemplateType] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -18,7 +19,7 @@ export default function TemplateRouter() {
   useEffect(() => {
     const fetchBoardData = async () => {
       try {
-        const response = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
+        const response = await axios.get(`${API_BASE_URL}/api/boards/${id}`);
         const board = response.data;
         
         // Determine template type from board data

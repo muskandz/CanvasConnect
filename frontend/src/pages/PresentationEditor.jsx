@@ -15,6 +15,8 @@ export default function PresentationEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
   
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://canvasconnect-fcch.onrender.com';
+  
   const [presentation, setPresentation] = useState({
     title: 'Untitled Presentation',
     slides: [
@@ -66,7 +68,7 @@ export default function PresentationEditor() {
   useEffect(() => {
     const loadPresentation = async () => {
       try {
-        const res = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
+        const res = await axios.get(`${API_BASE_URL}/api/boards/${id}`);
         const boardData = res.data;
         
         if (boardData.data) {
@@ -99,7 +101,7 @@ export default function PresentationEditor() {
   // Save presentation
   const savePresentation = async () => {
     try {
-      await axios.put('https://canvasconnect-fcch.onrender.com/api/boards/update', {
+      await axios.put(`${API_BASE_URL}/api/boards/update`, {
         boardId: id,
         title: presentation.title,
         data: JSON.stringify({ slides: presentation.slides }),

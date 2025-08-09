@@ -7,6 +7,8 @@ export default function KanbanEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
   
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://canvasconnect-fcch.onrender.com';
+  
   const [board, setBoard] = useState({
     title: 'Kanban Board',
     columns: [
@@ -37,7 +39,7 @@ export default function KanbanEditor() {
   useEffect(() => {
     const loadBoard = async () => {
       try {
-        const res = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
+        const res = await axios.get(`${API_BASE_URL}/api/boards/${id}`);
         const boardData = res.data;
         
         if (boardData.data) {
@@ -70,7 +72,7 @@ export default function KanbanEditor() {
   // Save board data
   const saveBoard = async () => {
     try {
-      await axios.put('https://canvasconnect-fcch.onrender.com/api/boards/update', {
+      await axios.put(`${API_BASE_URL}/api/boards/update`, {
         boardId: id,
         title: board.title,
         data: JSON.stringify({ columns: board.columns }),

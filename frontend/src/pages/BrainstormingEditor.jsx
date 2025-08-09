@@ -10,6 +10,8 @@ export default function BrainstormingEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
   
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://canvasconnect-fcch.onrender.com';
+  
   const [brainstorming, setBrainstorming] = useState({
     title: 'Brainstorming Session',
     topic: '',
@@ -64,7 +66,7 @@ export default function BrainstormingEditor() {
   useEffect(() => {
     const loadBrainstorming = async () => {
       try {
-        const res = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
+        const res = await axios.get(`${API_BASE_URL}/api/boards/${id}`);
         const boardData = res.data;
         
         if (boardData.data) {
@@ -97,7 +99,7 @@ export default function BrainstormingEditor() {
   // Save brainstorming
   const saveBrainstorming = async () => {
     try {
-      await axios.put('https://canvasconnect-fcch.onrender.com/api/boards/update', {
+      await axios.put(`${API_BASE_URL}/api/boards/update`, {
         boardId: id,
         title: brainstorming.title,
         data: JSON.stringify({
