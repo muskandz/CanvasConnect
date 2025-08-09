@@ -1,11 +1,14 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { Stage, Layer, Line, Rect, Text, Circle } from "react-konva"; // Added Circle for eraser cursor
+import Konva from "konva";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { v4 as uuidv4 } from 'uuid';
 import { io } from "socket.io-client";
+import { API_CONFIG } from "../config/api";
 import { Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Type } from 'lucide-react';
 
 import {
@@ -53,11 +56,110 @@ import { PresentationSlide } from "../components/templates/PresentationComponent
 import { BrainstormTopic, BrainstormIdea, BrainstormTimer } from "../components/templates/BrainstormComponents";
 import { MeetingHeader, MeetingSection } from "../components/templates/MeetingComponents";
 
-const socket = io(`https://canvasconnect-fcch.onrender.com`); // Back to port 5000
-// Make socket available globally for voice chat
-window.socket = socket;
+// Use shared API config and the global socket instance when available
+const API_BASE_URL = API_CONFIG.BASE_URL;
+const socket = (typeof window !== 'undefined' && window.socket)
+  ? window.socket
+  : io(API_CONFIG.SOCKET_URL);
+if (typeof window !== 'undefined') window.socket = socket;
 
 const MODES = { DRAW: "draw", ERASE: "erase", HIGHLIGHT: "highlight" };
+
+// Debounce utility for performance optimization
+const debounce = (func, wait) => {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+};
+
+// Line smoothing utilities for ultra-smooth drawing experience
+const getDistance = (p1, p2) => {
+  return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+};
+
+const getAveragePoint = (p1, p2) => {
+  return {
+    x: (p1.x + p2.x) / 2,
+    y: (p1.y + p2.y) / 2
+  };
+};
+
+// Advanced cubic bezier smoothing for ultra-smooth lines
+const getCubicBezierPoints = (points, smoothness = 0.4) => {
+  if (points.length < 6) return points;
+  
+  const smoothPoints = [];
+  smoothPoints.push(points[0], points[1]); // Start point
+  
+  for (let i = 2; i < points.length - 4; i += 2) {
+    const p0x = points[i - 2] || points[i];
+    const p0y = points[i - 1] || points[i + 1];
+    const p1x = points[i];
+    const p1y = points[i + 1];
+    const p2x = points[i + 2];
+    const p2y = points[i + 3];
+    const p3x = points[i + 4] || p2x;
+    const p3y = points[i + 5] || p2y;
+    
+    // Calculate control points for cubic bezier
+    const cp1x = p1x + (p2x - p0x) * smoothness;
+    const cp1y = p1y + (p2y - p0y) * smoothness;
+    const cp2x = p2x - (p3x - p1x) * smoothness;
+    const cp2y = p2y - (p3y - p1y) * smoothness;
+    
+    // Generate multiple points along the curve for ultra-smooth appearance
+    for (let t = 0; t <= 1; t += 0.1) {
+      const x = Math.pow(1 - t, 3) * p1x + 
+                3 * Math.pow(1 - t, 2) * t * cp1x + 
+                3 * (1 - t) * Math.pow(t, 2) * cp2x + 
+                Math.pow(t, 3) * p2x;
+      const y = Math.pow(1 - t, 3) * p1y + 
+                3 * Math.pow(1 - t, 2) * t * cp1y + 
+                3 * (1 - t) * Math.pow(t, 2) * cp2y + 
+                Math.pow(t, 3) * p2y;
+      
+      if (t > 0) { // Skip first point to avoid duplication
+        smoothPoints.push(x, y);
+      }
+    }
+  }
+  
+  // Add the last point
+  smoothPoints.push(points[points.length - 2], points[points.length - 1]);
+  return smoothPoints;
+};
+
+const getSmoothPoints = (points, smoothing = 0.3) => {
+  if (points.length < 6) return points; // Need at least 3 points for smoothing
+  
+  const smoothPoints = [];
+  smoothPoints.push(points[0], points[1]); // Keep first point as is
+  
+  for (let i = 2; i < points.length - 2; i += 2) {
+    const prevX = points[i - 2];
+    const prevY = points[i - 1];
+    const currX = points[i];
+    const currY = points[i + 1];
+    const nextX = points[i + 2];
+    const nextY = points[i + 3];
+    
+    // Apply quadratic smoothing
+    const smoothX = currX + (prevX + nextX - 2 * currX) * smoothing;
+    const smoothY = currY + (prevY + nextY - 2 * currY) * smoothing;
+    
+    smoothPoints.push(smoothX, smoothY);
+  }
+  
+  // Keep last point as is
+  smoothPoints.push(points[points.length - 2], points[points.length - 1]);
+  return smoothPoints;
+};
 
 export default function WhiteboardEditor() {
   const { id } = useParams(); // Whiteboard ID from route
@@ -86,20 +188,252 @@ export default function WhiteboardEditor() {
   const [isMicEnabled, setIsMicEnabled] = useState(false);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [zoom, setZoom] = useState(1);
+  const [stageSize, setStageSize] = useState({ width: typeof window !== 'undefined' ? window.innerWidth : 1280, height: typeof window !== 'undefined' ? Math.max(300, window.innerHeight - 220) : 720 });
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', 'error'
   const layerRef = useRef(null);
   const stageRef = useRef(null);
+  const headerRef = useRef(null);
+  const toolbarRef = useRef(null);
+  // Imperative drawing/pan/zoom performance refs
+  const activeLineRef = useRef(null); // Konva.Line during an active stroke
+  const isStrokeActiveRef = useRef(false);
+  const currentStrokeIdRef = useRef(null);
+  const lastPointerRef = useRef({ x: 0, y: 0, t: 0 });
+  const pinchRef = useRef({
+    initialDist: 0,
+    initialScale: 1,
+    center: { x: 0, y: 0 },
+    stagePos: { x: 0, y: 0 }
+  });
+  const inertiaRef = useRef({ vx: 0, vy: 0, lastTime: 0, raf: null });
   const [isVoiceConnected, setIsVoiceConnected] = useState(false);
   const [showAudioTest, setShowAudioTest] = useState(false);
   const [textBoxes, setTextBoxes] = useState([]);
   const [selectedBox, setSelectedBox] = useState(null);
   const [isEditing, setIsEditing] = useState(null);
+  const [selectedNoteId, setSelectedNoteId] = useState(null);
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editingNoteValue, setEditingNoteValue] = useState("");
   const [dragState, setDragState] = useState({ isDragging: false, offset: { x: 0, y: 0 } });
+  const [resizeState, setResizeState] = useState({ isResizing: false, boxId: null, startX: 0, startY: 0, startW: 0, startH: 0 });
   const canvasRef = useRef(null);
   const textAreaRef = useRef(null);
+  const lastTouchRef = useRef([]);
+  // Gate initial board load to avoid wiping in-progress strokes if server re-emits state
+  const initialBoardLoadedRef = useRef(false);
+  const [isToolbarOpen, setIsToolbarOpen] = useState(true);
+
+  // Dropdown trigger refs (for portal positioning)
+  const colorTriggerRef = useRef(null);
+  const strokeTriggerRef = useRef(null);
+  const eraserTriggerRef = useRef(null);
+  const highlighterTriggerRef = useRef(null);
+  const backgroundTriggerRef = useRef(null);
+  const exportTriggerRef = useRef(null);
+  // Helper to close all dropdowns
+  const closeAllDropdowns = useCallback(() => {
+    setShowColorPalette(false);
+    setShowStrokeWidthPanel(false);
+    setShowEraserSizePanel(false);
+    setShowHighlighterPanel(false);
+    setShowBackgroundPanel(false);
+    setShowExportPanel(false);
+  }, []);
+
+
+  // Simple Portal component for dropdowns
+  const DropdownPortal = ({ open, anchorRef, align = 'left', offset = 12, children, minWidth }) => {
+    const [, setTick] = useState(0);
+    const [style, setStyle] = useState({});
+
+    const updatePosition = useCallback(() => {
+      const anchor = anchorRef?.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const top = rect.bottom + offset;
+      const left = align === 'right' ? undefined : rect.left;
+      const right = align === 'right' ? (window.innerWidth - rect.right) : undefined;
+      setStyle({ position: 'fixed', top, left, right, zIndex: 100000, minWidth });
+    }, [anchorRef, align, offset, minWidth]);
+
+    useEffect(() => {
+      if (!open) return;
+      updatePosition();
+      const onScroll = () => { updatePosition(); setTick((t) => t + 1); };
+      const onResize = () => { updatePosition(); setTick((t) => t + 1); };
+      window.addEventListener('scroll', onScroll, true);
+      window.addEventListener('resize', onResize);
+      return () => {
+        window.removeEventListener('scroll', onScroll, true);
+        window.removeEventListener('resize', onResize);
+      };
+    }, [open, updatePosition]);
+
+    if (!open) return null;
+    return createPortal(
+      <div className="dropdown-panel" style={style}>
+        {children}
+      </div>,
+      document.body
+    );
+  };
+
+  // Collapse tools by default on small screens
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsToolbarOpen(false);
+    }
+  }, []);
+
+  // Finite world size to avoid endless scrolling
+  const WORLD_SIZE = useRef({ width: 8000, height: 6000 });
+
+  // Clamp panOffset so the world stays within view (center if world smaller than viewport at current zoom)
+  const clampPan = useCallback((x, y, z) => {
+    const worldW = WORLD_SIZE.current.width * z;
+    const worldH = WORLD_SIZE.current.height * z;
+    const viewW = stageSize.width;
+    const viewH = stageSize.height;
+    let nx = x;
+    let ny = y;
+    // If world smaller than viewport on an axis, center it
+    if (worldW <= viewW) {
+      nx = (viewW - worldW) / 2;
+    } else {
+      const minX = viewW - worldW; // most left
+      const maxX = 0;              // most right
+      nx = Math.max(minX, Math.min(maxX, nx));
+    }
+    if (worldH <= viewH) {
+      ny = (viewH - worldH) / 2;
+    } else {
+      const minY = viewH - worldH;
+      const maxY = 0;
+      ny = Math.max(minY, Math.min(maxY, ny));
+    }
+    return { x: nx, y: ny };
+  }, [stageSize.width, stageSize.height]);
+  
+  // Drawing performance optimization refs
+  const drawingBufferRef = useRef([]);
+  const lastDrawTimeRef = useRef(0);
+  const animationFrameRef = useRef(null);
+
+  // Helpers: device detection and math
+  const isMobile = useMemo(() => typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent), []);
+
+  const dist = (p1, p2) => Math.hypot(p2.x - p1.x, p2.y - p1.y);
+  const getTouches = (evt) => Array.from(evt.touches || []);
+  const getTouchPoint = (stage) => stage.getPointerPosition();
+
+  // Inertia panning animation
+  const startInertia = useCallback(() => {
+    const step = () => {
+      // Apply friction-driven velocity to panOffset state
+      const friction = 0.92;
+      const { vx, vy } = inertiaRef.current;
+      setPanOffset((prev) => {
+        const cand = { x: prev.x + vx, y: prev.y + vy };
+        const clamped = clampPan(cand.x, cand.y, zoom);
+        // If clamped changed the position (hit boundary), bleed velocity faster
+        if (Math.abs(clamped.x - cand.x) > 0.5) inertiaRef.current.vx *= 0.5;
+        if (Math.abs(clamped.y - cand.y) > 0.5) inertiaRef.current.vy *= 0.5;
+        return clamped;
+      });
+      inertiaRef.current.vx *= friction;
+      inertiaRef.current.vy *= friction;
+      if (Math.abs(inertiaRef.current.vx) > 0.2 || Math.abs(inertiaRef.current.vy) > 0.2) {
+        inertiaRef.current.raf = requestAnimationFrame(step);
+      } else {
+        inertiaRef.current.vx = 0;
+        inertiaRef.current.vy = 0;
+        inertiaRef.current.lastTime = 0;
+        inertiaRef.current.raf = null;
+      }
+    };
+    if (inertiaRef.current.raf) cancelAnimationFrame(inertiaRef.current.raf);
+    inertiaRef.current.raf = requestAnimationFrame(step);
+  }, [clampPan, zoom]);
+
+  // Begin an imperative stroke (no React state updates during stroke)
+  const beginStroke = useCallback((x, y, opts) => {
+    const layer = layerRef.current;
+    if (!layer) return;
+    const nodeLayer = layer; // react-konva forwards Konva node directly on ref
+    const line = new Konva.Line({
+      points: [x, y],
+      stroke: opts.color,
+      strokeWidth: opts.width,
+      lineCap: 'round',
+      lineJoin: 'round',
+      opacity: opts.opacity ?? 1,
+      globalCompositeOperation: opts.gco || 'source-over',
+      tension: 0.25, // subtle smoothing
+      perfectDrawEnabled: false,
+      shadowForStrokeEnabled: false,
+      listening: false
+    });
+    nodeLayer.add(line);
+    nodeLayer.batchDraw();
+    activeLineRef.current = line;
+    isStrokeActiveRef.current = true;
+  }, []);
+
+  const extendStroke = useCallback((x, y, emit, roomId) => {
+    const line = activeLineRef.current;
+    const stage = stageRef.current;
+    if (!line || !stage) return;
+    const points = line.points();
+    const lastX = points[points.length - 2];
+    const lastY = points[points.length - 1];
+    // Low-pass filter: add point only if moved enough
+    const dx = x - lastX; const dy = y - lastY;
+    if (dx * dx + dy * dy < 2.5) return; // ~1.58px
+    line.points(points.concat([x, y]));
+    // Slight smoothing by adjusting tension
+    line.tension(0.3);
+    // Draw efficiently
+    stage.batchDraw();
+    // Network (throttled by caller)
+    if (emit) emit({ id: uuidv4(), points: line.points(), color: line.stroke(), strokeWidth: line.strokeWidth(), opacity: line.opacity(), globalCompositeOperation: line.globalCompositeOperation() });
+  }, []);
+
+  const endStroke = useCallback(() => {
+    if (!isStrokeActiveRef.current || !activeLineRef.current) return;
+    const line = activeLineRef.current;
+    // Snapshot props before destroying the temp node
+    const committedId = currentStrokeIdRef.current || uuidv4();
+    const pts = line.points();
+    const col = line.stroke();
+    const sw = line.strokeWidth();
+    const op = line.opacity();
+    const gco = line.globalCompositeOperation();
+    // Remove temporary Konva node to avoid duplicate rendering
+    line.destroy();
+    isStrokeActiveRef.current = false;
+    activeLineRef.current = null;
+    currentStrokeIdRef.current = null;
+    // Commit once to React state for persistence
+    const committed = {
+      id: committedId,
+      points: pts,
+      color: col,
+      strokeWidth: sw,
+      opacity: op,
+      isHighlight: gco === 'multiply',
+      globalCompositeOperation: gco
+    };
+    setLines((prev) => [...prev, committed]);
+    // Broadcast once per stroke to avoid flooding remote clients
+    try {
+      socket.emit('drawing', { room: id, line: committed });
+    } catch (_) {
+      // no-op
+    }
+  }, []);
 
   const [eraserSize, setEraserSize] = useState(20); // Eraser size in pixels
   const [isErasing, setIsErasing] = useState(false);
@@ -153,7 +487,7 @@ export default function WhiteboardEditor() {
       text: 'Click to edit text',
       style: { ...defaultStyle },
       width: 200,
-      height: 'auto'
+      height: 120
     };
     console.log("Creating new text box:", newBox);
     setTextBoxes([...textBoxes, newBox]);
@@ -162,7 +496,7 @@ export default function WhiteboardEditor() {
     // Force immediate save after creating text box
     setTimeout(() => {
       console.log("Force saving after text box creation");
-      axios.put(`https://canvasconnect-fcch.onrender.com/api/boards/update`, {
+      axios.put(`${API_BASE_URL}/api/boards/update`, {
         boardId: id,
         data: lines,
         notes: notes,
@@ -187,6 +521,8 @@ export default function WhiteboardEditor() {
     if (selectedTool === 'text') {
       createTextBox(e);
     }
+  // Close any open dropdowns when clicking canvas container
+  closeAllDropdowns();
   };
 
   const handleDoubleClick = (boxId) => {
@@ -205,7 +541,7 @@ export default function WhiteboardEditor() {
     // Force immediate save after text change
     setTimeout(() => {
       console.log("Force saving after text change");
-      axios.put(`https://canvasconnect-fcch.onrender.com/api/boards/update`, {
+      axios.put(`${API_BASE_URL}/api/boards/update`, {
         boardId: id,
         data: lines,
         notes: notes,
@@ -256,6 +592,30 @@ export default function WhiteboardEditor() {
     e.preventDefault();
   };
 
+  // Touch start for dragging text boxes (mobile)
+  const handleTextTouchStart = (e, boxId) => {
+    if (isEditing) return;
+    const touch = e.touches && e.touches[0];
+    if (!touch) return;
+    const box = textBoxes.find(b => b.id === boxId);
+    if (!box) return;
+    const canvasContainer = document.getElementById('whiteboard-stage');
+    if (!canvasContainer) return;
+    const canvasRect = canvasContainer.getBoundingClientRect();
+
+    setSelectedBox(boxId);
+    setDragState({
+      isDragging: true,
+      offset: {
+        x: touch.clientX - canvasRect.left - box.x,
+        y: touch.clientY - canvasRect.top - box.y
+      }
+    });
+    // Prevent page scroll while starting drag
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
   const handleTextMouseMove = (e) => {
     if (!dragState.isDragging || !selectedBox) return;
 
@@ -278,6 +638,65 @@ export default function WhiteboardEditor() {
 
   const handleTextMouseUp = () => {
     setDragState({ isDragging: false, offset: { x: 0, y: 0 } });
+  };
+
+  // Touch move for dragging
+  const handleTextTouchMove = (e) => {
+    if (!dragState.isDragging || !selectedBox) return;
+    const touch = e.touches && e.touches[0];
+    if (!touch) return;
+    const canvasContainer = document.getElementById('whiteboard-stage');
+    if (!canvasContainer) return;
+    const rect = canvasContainer.getBoundingClientRect();
+    const newX = touch.clientX - rect.left - dragState.offset.x;
+    const newY = touch.clientY - rect.top - dragState.offset.y;
+
+    setTextBoxes(boxes => 
+      boxes.map(box => 
+        box.id === selectedBox
+          ? { ...box, x: Math.max(0, newX), y: Math.max(0, newY) }
+          : box
+      )
+    );
+    // Avoid scrolling while dragging
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleTextTouchEnd = () => {
+    setDragState({ isDragging: false, offset: { x: 0, y: 0 } });
+  };
+
+  const startResize = (e, boxId) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const box = textBoxes.find(b => b.id === boxId);
+    if (!box) return;
+    setResizeState({
+      isResizing: true,
+      boxId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startW: box.width || 200,
+      startH: typeof box.height === 'number' ? box.height : 120
+    });
+  };
+
+  const startResizeTouch = (e, boxId) => {
+    const touch = e.touches && e.touches[0];
+    if (!touch) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const box = textBoxes.find(b => b.id === boxId);
+    if (!box) return;
+    setResizeState({
+      isResizing: true,
+      boxId,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      startW: box.width || 200,
+      startH: typeof box.height === 'number' ? box.height : 120
+    });
   };
 
   const updateStyle = (property, value) => {
@@ -390,11 +809,28 @@ export default function WhiteboardEditor() {
           deleteSelected();
         }
       }
+      if (e.key === 'Escape') {
+        setShowColorPalette(false);
+        setShowStrokeWidthPanel(false);
+        setShowEraserSizePanel(false);
+        setShowHighlighterPanel(false);
+        setShowBackgroundPanel(false);
+        setShowExportPanel(false);
+      }
     };
 
     const handleGlobalMouseMove = (e) => {
       if (dragState.isDragging && selectedBox) {
         handleTextMouseMove(e);
+      }
+      if (resizeState.isResizing && resizeState.boxId) {
+        const dx = e.clientX - resizeState.startX;
+        const dy = e.clientY - resizeState.startY;
+        const minW = 120;
+        const minH = 35;
+        const newW = Math.max(minW, resizeState.startW + dx);
+        const newH = Math.max(minH, resizeState.startH + dy);
+        setTextBoxes((boxes) => boxes.map((b) => b.id === resizeState.boxId ? { ...b, width: newW, height: newH } : b));
       }
     };
 
@@ -402,18 +838,51 @@ export default function WhiteboardEditor() {
       if (dragState.isDragging) {
         handleTextMouseUp();
       }
+      if (resizeState.isResizing) {
+        setResizeState({ isResizing: false, boxId: null, startX: 0, startY: 0, startW: 0, startH: 0 });
+      }
     };
 
     document.addEventListener('keydown', handleKeyPress);
     document.addEventListener('mousemove', handleGlobalMouseMove);
     document.addEventListener('mouseup', handleGlobalMouseUp);
+    // Touch listeners for mobile drag/resize
+    const handleGlobalTouchMove = (e) => {
+      const touch = e.touches && e.touches[0];
+      if (!touch) return;
+      if (dragState.isDragging && selectedBox) {
+        handleTextTouchMove(e);
+      }
+      if (resizeState.isResizing && resizeState.boxId) {
+        const dx = touch.clientX - resizeState.startX;
+        const dy = touch.clientY - resizeState.startY;
+        const minW = 120;
+        const minH = 35;
+        const newW = Math.max(minW, resizeState.startW + dx);
+        const newH = Math.max(minH, resizeState.startH + dy);
+        setTextBoxes((boxes) => boxes.map((b) => b.id === resizeState.boxId ? { ...b, width: newW, height: newH } : b));
+        e.preventDefault();
+      }
+    };
+    const handleGlobalTouchEnd = () => {
+      if (dragState.isDragging) {
+        handleTextTouchEnd();
+      }
+      if (resizeState.isResizing) {
+        setResizeState({ isResizing: false, boxId: null, startX: 0, startY: 0, startW: 0, startH: 0 });
+      }
+    };
+    document.addEventListener('touchmove', handleGlobalTouchMove, { passive: false });
+    document.addEventListener('touchend', handleGlobalTouchEnd);
     
     return () => {
       document.removeEventListener('keydown', handleKeyPress);
       document.removeEventListener('mousemove', handleGlobalMouseMove);
-      document.removeEventListener('mouseup', handleGlobalMouseUp);
+  document.removeEventListener('mouseup', handleGlobalMouseUp);
+  document.removeEventListener('touchmove', handleGlobalTouchMove);
+  document.removeEventListener('touchend', handleGlobalTouchEnd);
     };
-  }, [selectedBox, isEditing, dragState.isDragging]);
+  }, [selectedBox, isEditing, dragState.isDragging, resizeState.isResizing, resizeState.boxId]);
 
   // Click outside handler for dropdowns
   useEffect(() => {
@@ -734,7 +1203,7 @@ export default function WhiteboardEditor() {
   // Load board data when component mounts
   useEffect(() => {
     // Test which backend server is running
-    axios.get(`https://canvasconnect-fcch.onrender.com/api/health`)
+    axios.get(`${API_BASE_URL}/api/health`)
       .then(response => {
         console.log("Backend server info:", response.data);
       })
@@ -744,7 +1213,7 @@ export default function WhiteboardEditor() {
       
     const fetchBoardData = async () => {
       try {
-        const res = await axios.get(`https://canvasconnect-fcch.onrender.com/api/boards/${id}`);
+        const res = await axios.get(`${API_BASE_URL}/api/boards/${id}`);
         const board = res.data;
         console.log("Loaded board:", board);
         
@@ -807,7 +1276,7 @@ export default function WhiteboardEditor() {
       if (lines.length > 0 || templateData.length > 0 || textBoxes.length > 0 || notes.length > 0) {
         console.log("Auto-saving with textBoxes:", textBoxes);
         const dataToSave = templateData.length > 0 ? templateData : lines;
-        axios.put(`https://canvasconnect-fcch.onrender.com/api/boards/update`, {
+        axios.put(`${API_BASE_URL}/api/boards/update`, {
           boardId: id,
           data: dataToSave, // Send data directly, not stringified
           notes: notes,
@@ -835,8 +1304,12 @@ export default function WhiteboardEditor() {
       });
   
       socket.on('load_board_state', (data) => {
-        if (data?.lines) setLines(data.lines);
-        if (data?.notes) setNotes(data.notes);
+        // Apply initial load only once to prevent overwriting active local drawing
+        if (!initialBoardLoadedRef.current) {
+          if (data?.lines) setLines(data.lines);
+          if (data?.notes) setNotes(data.notes);
+          initialBoardLoadedRef.current = true;
+        }
       });
   
       return () => {
@@ -847,79 +1320,47 @@ export default function WhiteboardEditor() {
     }
   }, [id]);  
 
-  // Drawing handlers
-  const handleMouseDown = (e) => {
-    // Clear text box selection when clicking on canvas
-    if (selectedTool !== 'text') {
-      setSelectedBox(null);
-    }
-    
-    if (mode === MODES.ERASE) {
-      const stage = e.target.getStage();
-      const pos = stage.getPointerPosition();
-      setIsErasing(true);
-      setEraserPos({ x: pos.x, y: pos.y });
-      eraseAtPosition(pos.x, pos.y);
-      return;
-    }
-
-    // Drawing logic (includes highlighter)
-    if (selectedTool === 'pen' || mode === MODES.HIGHLIGHT) {
-      isDrawing.current = true;
-      const pos = e.target.getStage().getPointerPosition();
-      
-      const newLine = {
-        points: [pos.x, pos.y],
-        color: mode === MODES.HIGHLIGHT ? highlighterColor : strokeColor,
-        strokeWidth: mode === MODES.HIGHLIGHT ? highlighterWidth : strokeWidth,
-        isHighlight: mode === MODES.HIGHLIGHT,
-        opacity: mode === MODES.HIGHLIGHT ? 0.4 : 1.0
-      };
-      
-      setLines([...lines, newLine]);
-      setRedoStack([]);
-    }
-  };
-  
-  const handleMouseMove = (e) => {
-    const stage = e.target.getStage();
-    const point = stage.getPointerPosition();
-    
-    if (mode === MODES.ERASE) {
-      setEraserPos({ x: point.x, y: point.y });
-      
-      if (isErasing) {
-        eraseAtPosition(point.x, point.y);
+  // Cleanup effect for drawing performance optimization
+  useEffect(() => {
+    return () => {
+      // Cleanup animation frames and buffers on unmount
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
       }
-      return;
-    }
-    
-    if (!isDrawing.current || (mode !== MODES.DRAW && mode !== MODES.HIGHLIGHT) || (selectedTool !== 'pen' && mode !== MODES.HIGHLIGHT)) return;
-    
-    setLines((prevLines) => {
-      const lastLine = { ...prevLines[prevLines.length - 1] };
-      lastLine.points = [...lastLine.points, point.x, point.y];
+      drawingBufferRef.current = [];
+    };
+  }, []);  
 
-      // Emit drawing event to other users
-      socket.emit('drawing', {
-        room: id,
-        line: lastLine
-      });
-      
-      return [...prevLines.slice(0, -1), lastLine];
-    });
-  };
+  // Respond to window resize for Stage sizing and pan clamping
+  useEffect(() => {
+    const onResize = () => {
+      const hh = headerRef.current?.offsetHeight || 0;
+      const th = isToolbarOpen ? (toolbarRef.current?.offsetHeight || 0) : 0;
+      const next = { width: window.innerWidth, height: Math.max(300, window.innerHeight - (hh + th)) };
+      setStageSize(next);
+      setPanOffset(curr => clampPan(curr.x, curr.y, zoom));
+    };
+    window.addEventListener('resize', onResize);
+    // run once
+    onResize();
+    return () => window.removeEventListener('resize', onResize);
+  }, [clampPan, zoom, isToolbarOpen]);
+  
+  // Initial compute after mount (once refs have layout)
+  useEffect(() => {
+    const hh = headerRef.current?.offsetHeight || 0;
+    const th = isToolbarOpen ? (toolbarRef.current?.offsetHeight || 0) : 0;
+    setStageSize({ width: window.innerWidth, height: Math.max(300, window.innerHeight - (hh + th)) });
+    setPanOffset(curr => clampPan(curr.x, curr.y, zoom));
+  }, [isToolbarOpen]);
 
-  const handleMouseUp = () => {
-    isDrawing.current = false;
-    setIsErasing(false);
-  };
+
 
   const handleSave = async () => {
     try {
       console.log("Manual save with textBoxes:", textBoxes);
       setSaveStatus('saving');
-      await axios.put(`https://canvasconnect-fcch.onrender.com/api/boards/update`, {
+      await axios.put(`${API_BASE_URL}/api/boards/update`, {
         boardId: id,
         data: lines,
         notes: notes,
@@ -951,18 +1392,42 @@ export default function WhiteboardEditor() {
     }
   };
 
+  // Ultra-responsive socket emission for real-time collaboration
+  const throttledDrawingEmit = useCallback(
+    debounce((line) => {
+      socket.emit('drawing', { room: id, line });
+    }, 16), // Back to 60fps for ultra-responsive collaboration
+    [id]
+  );
+
+  const throttledEraseEmit = useCallback(
+    debounce((lines) => {
+      socket.emit('erase', { room: id, lines });
+    }, 33), // 30fps for erase operations
+    [id]
+  );
+
   // Enhanced zoom functions
   const handleZoomIn = () => {
-    setZoom(prev => Math.min(prev * 1.2, 3));
+    setZoom(prev => {
+      const next = Math.min(prev * 1.2, 3);
+      setPanOffset(curr => clampPan(curr.x, curr.y, next));
+      return next;
+    });
   };
 
   const handleZoomOut = () => {
-    setZoom(prev => Math.max(prev / 1.2, 0.2));
+    setZoom(prev => {
+      const next = Math.max(prev / 1.2, 0.2);
+      setPanOffset(curr => clampPan(curr.x, curr.y, next));
+      return next;
+    });
   };
 
   const resetZoom = () => {
-    setZoom(1);
-    setPanOffset({ x: 0, y: 0 });
+    const next = 1;
+    setZoom(next);
+    setPanOffset(curr => clampPan(curr.x, curr.y, next));
   };
 
   // Enhanced export functions
@@ -1093,6 +1558,75 @@ export default function WhiteboardEditor() {
     }
   };
 
+  const bringNoteToFront = (id) => {
+    setNotes((prev) => {
+      const idx = prev.findIndex((n) => n.id === id);
+      if (idx === -1) return prev;
+      const arr = prev.slice();
+      const [n] = arr.splice(idx, 1);
+      arr.push(n);
+      return arr;
+    });
+  };
+
+  const selectNote = (id) => {
+    setSelectedNoteId(id);
+    bringNoteToFront(id);
+  };
+
+  const startNoteEdit = (note) => {
+    setEditingNoteId(note.id);
+    setEditingNoteValue(note.text || "");
+  };
+
+  const commitNoteEdit = () => {
+    if (!editingNoteId) return;
+    const note = notes.find((n) => n.id === editingNoteId);
+    if (!note) {
+      setEditingNoteId(null);
+      return;
+    }
+    const newText = editingNoteValue;
+    const updated = { ...note, text: newText };
+    // Auto-resize height based on content (convert from screen px to world units via zoom)
+    try {
+      const ta = document.getElementById('note-editor-textarea');
+      if (ta) {
+        const contentH = Math.max(35, ta.scrollHeight);
+        const padding = 24; // matches visual padding
+        const worldH = Math.max(80, (contentH + padding) / Math.max(zoom, 0.001));
+        updated.height = worldH;
+      }
+    } catch {}
+    setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+    socket.emit('note_updated', { room: id, note: updated });
+    setEditingNoteId(null);
+  };
+
+  const cancelNoteEdit = () => {
+    setEditingNoteId(null);
+  };
+
+  // Resize handle drag logic for notes
+  const handleNoteResizeDragMove = (noteId, e) => {
+    const note = notes.find((n) => n.id === noteId);
+    if (!note) return;
+    const handleX = e.target.x();
+    const handleY = e.target.y();
+    const minW = 120;
+    const minH = 80;
+    const newW = Math.max(minW, handleX - note.x);
+    const newH = Math.max(minH, handleY - note.y);
+    const updated = { ...note, width: newW, height: newH };
+    setNotes((prev) => prev.map((n) => (n.id === noteId ? updated : n)));
+  };
+
+  const handleNoteResizeDragEnd = (noteId) => {
+    const note = notes.find((n) => n.id === noteId);
+    if (!note) return;
+    socket.emit('note_updated', { room: id, note });
+  };
+
   const shareLink = `${window.location.origin}/whiteboard/${id}`;
 
   const updateTemplateItem = (itemId, updatedItem) => {
@@ -1122,6 +1656,374 @@ export default function WhiteboardEditor() {
       setSelectedBox(null);
       setIsEditing(null);
     }
+  };
+
+  // Mouse and Touch event handlers for drawing and panning
+  const handleMouseDown = (e) => {
+  // Close any open dropdowns when starting interaction with the board
+  closeAllDropdowns();
+    // Clear text box selection when clicking on canvas (unless in text mode)
+    if (selectedTool !== 'text') {
+      setSelectedBox(null);
+    }
+
+    const stage = e.target.getStage();
+    const point = stage.getPointerPosition();
+    if (!point) return;
+
+    // Adjust for pan and zoom
+    const adjustedX = (point.x - panOffset.x) / zoom;
+    const adjustedY = (point.y - panOffset.y) / zoom;
+
+    // Middle mouse or Ctrl+Click begins panning
+    if (e.evt.button === 1 || (e.evt.button === 0 && e.evt.ctrlKey)) {
+      setIsPanning(true);
+      return;
+    }
+    // Only respond to primary button for drawing/erasing
+    if (e.evt.button !== 0) return;
+
+    if (selectedTool === 'select') {
+      return;
+    }
+
+    // Eraser
+    if (mode === MODES.ERASE) {
+      setIsErasing(true);
+      setEraserPos({ x: point.x, y: point.y });
+      // Use eraser with adjusted coordinates in world space
+      eraseAtPosition(adjustedX, adjustedY);
+      return;
+    }
+
+    // Drawing (pen or highlighter)
+    if (selectedTool === 'pen' || mode === MODES.HIGHLIGHT) {
+      isDrawing.current = true;
+      const isHighlight = mode === MODES.HIGHLIGHT;
+      const newLine = {
+        points: [adjustedX, adjustedY],
+        color: isHighlight ? highlighterColor : strokeColor,
+        strokeWidth: isHighlight ? highlighterWidth : strokeWidth,
+        isHighlight: isHighlight,
+        opacity: isHighlight ? 0.4 : 1.0
+      };
+      setLines(prev => [...prev, newLine]);
+      setRedoStack([]);
+    }
+  };
+
+  const handleMouseMove = (e) => {
+    const stage = e.target.getStage();
+    const point = stage.getPointerPosition();
+    if (!point) return;
+
+    // If no primary button, stop panning/drawing
+    if ((e.evt.buttons & 1) === 0) {
+      if (isPanning) setIsPanning(false);
+      if (isDrawing.current) isDrawing.current = false;
+    }
+
+    // Panning
+    if (isPanning && (e.evt.buttons & 1) === 1) {
+      const deltaX = e.evt.movementX;
+      const deltaY = e.evt.movementY;
+      setPanOffset(prev => {
+        const cand = { x: prev.x + deltaX, y: prev.y + deltaY };
+        return clampPan(cand.x, cand.y, zoom);
+      });
+      return;
+    }
+
+    // Adjust for pan and zoom
+    const adjustedX = (point.x - panOffset.x) / zoom;
+    const adjustedY = (point.y - panOffset.y) / zoom;
+
+    // Erasing
+    if (mode === MODES.ERASE) {
+      setEraserPos({ x: point.x, y: point.y });
+      if (isErasing) {
+        eraseAtPosition(adjustedX, adjustedY);
+      }
+      return;
+    }
+
+    // Drawing
+    if (!isDrawing.current || (mode !== MODES.DRAW && mode !== MODES.HIGHLIGHT) || (selectedTool !== 'pen' && mode !== MODES.HIGHLIGHT)) return;
+    setLines((prevLines) => {
+      if (prevLines.length === 0) return prevLines;
+      const lastLine = { ...prevLines[prevLines.length - 1] };
+      lastLine.points = [...lastLine.points, adjustedX, adjustedY];
+      // Emit drawing event to other users
+      socket.emit('drawing', {
+        room: id,
+        line: lastLine
+      });
+      return [...prevLines.slice(0, -1), lastLine];
+    });
+  };
+
+  // Simplified buffer processing - no longer needed for immediate drawing
+  const processDrawingBuffer = () => {
+    // Legacy function - keeping for compatibility but not actively used
+    drawingBufferRef.current = [];
+  };
+
+  const handleMouseUp = () => {
+    if (isPanning) {
+      setIsPanning(false);
+      return;
+    }
+    isDrawing.current = false;
+    setIsErasing(false);
+  };
+
+  // Touch event handlers (imperative drawing + pinch-zoom + inertia)
+  const handleTouchStart = (e) => {
+  // Close any open dropdowns on touch start
+  closeAllDropdowns();
+    // Prevent the browser from scrolling the page
+    if (e?.evt?.preventDefault) e.evt.preventDefault();
+    const stage = e.target.getStage();
+    if (!stage) return;
+    const touches = e.evt.touches;
+    lastTouchRef.current = Array.from(touches);
+    if (touches.length === 2) {
+      e.evt.preventDefault();
+      setIsPanning(true);
+      // Initialize pinch gesture
+      const t1 = touches[0];
+      const t2 = touches[1];
+      const cx = (t1.clientX + t2.clientX) / 2;
+      const cy = (t1.clientY + t2.clientY) / 2;
+      pinchRef.current = {
+        initialDist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
+        initialScale: zoom,
+        center: { x: cx, y: cy },
+        stagePos: { x: panOffset.x, y: panOffset.y }
+      };
+      // cancel any inertia in progress
+      if (inertiaRef.current.raf) {
+        cancelAnimationFrame(inertiaRef.current.raf);
+        inertiaRef.current.raf = null;
+      }
+      inertiaRef.current.vx = 0; inertiaRef.current.vy = 0; inertiaRef.current.lastTime = 0;
+      return;
+    }
+
+    // One-finger: draw or erase
+    const point = stage.getPointerPosition();
+    if (!point) return;
+    const adjustedX = (point.x - panOffset.x) / zoom;
+    const adjustedY = (point.y - panOffset.y) / zoom;
+
+    if (mode === MODES.ERASE) {
+      isDrawing.current = false;
+      setIsErasing(true);
+      const newLines = lines.filter(line => {
+        const lineDistance = getDistanceToLine(adjustedX, adjustedY, line.points);
+        return lineDistance > eraserSize / 2;
+      });
+      if (newLines.length !== lines.length) {
+        setLines(newLines);
+        socket.emit('erase', { room: id, lines: newLines });
+      }
+      return;
+    }
+
+    // Begin imperative stroke
+    isDrawing.current = true;
+    const isHighlight = mode === MODES.HIGHLIGHT || selectedTool === 'highlighter';
+    const color = isHighlight ? (highlighterColor) : strokeColor;
+    const width = isHighlight ? highlighterWidth : strokeWidth;
+    const gco = isHighlight ? 'multiply' : 'source-over';
+    currentStrokeIdRef.current = uuidv4();
+    beginStroke(adjustedX, adjustedY, { color, width, gco, opacity: isHighlight ? 0.5 : 1 });
+  };
+
+  const handleTouchMove = (e) => {
+    // Prevent the browser from scrolling the page while drawing or panning
+    if (e?.evt?.preventDefault) e.evt.preventDefault();
+    const stage = e.target.getStage();
+    if (!stage) return;
+    const touches = e.evt.touches;
+
+    // Pinch / two-finger pan-zoom
+    if (isPanning && touches.length === 2) {
+      e.evt.preventDefault();
+      const t1 = touches[0];
+      const t2 = touches[1];
+      const cx = (t1.clientX + t2.clientX) / 2;
+      const cy = (t1.clientY + t2.clientY) / 2;
+      const curDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const initial = pinchRef.current;
+      if (!initial.initialDist) return;
+      const scaleFactor = curDist / initial.initialDist;
+      const newScale = Math.max(0.2, Math.min(3, initial.initialScale * scaleFactor));
+
+      // Combine center translation with zoom anchoring
+      const dxCenter = cx - initial.center.x;
+      const dyCenter = cy - initial.center.y;
+  const tempPos = clampPan(initial.stagePos.x + dxCenter, initial.stagePos.y + dyCenter, initial.initialScale);
+      const anchor = {
+        x: (cx - tempPos.x) / initial.initialScale,
+        y: (cy - tempPos.y) / initial.initialScale,
+      };
+      const unclampedPos = {
+        x: cx - anchor.x * newScale,
+        y: cy - anchor.y * newScale,
+      };
+      const newPos = clampPan(unclampedPos.x, unclampedPos.y, newScale);
+
+      requestAnimationFrame(() => {
+        setZoom(newScale);
+        setPanOffset(newPos);
+      });
+
+      // Track velocity for inertia
+  const now = performance.now();
+      const last = lastPointerRef.current;
+      if (last.t) {
+        const dt = Math.max(1, now - last.t);
+        inertiaRef.current.vx = (cx - last.x) * 0.9; // pixels per frame approx
+        inertiaRef.current.vy = (cy - last.y) * 0.9;
+      }
+      lastPointerRef.current = { x: cx, y: cy, t: now };
+      return;
+    }
+
+    // One-finger drawing/erasing
+    const point = stage.getPointerPosition();
+    if (!point) return;
+    const adjustedX = (point.x - panOffset.x) / zoom;
+    const adjustedY = (point.y - panOffset.y) / zoom;
+
+    if (isErasing) {
+      const newLines = lines.filter(line => {
+        const lineDistance = getDistanceToLine(adjustedX, adjustedY, line.points);
+        return lineDistance > eraserSize / 2;
+      });
+      if (newLines.length !== lines.length) {
+        setLines(newLines);
+        throttledEraseEmit(newLines);
+      }
+      return;
+    }
+
+    if (!isDrawing.current) return;
+    if (isStrokeActiveRef.current) {
+      extendStroke(adjustedX, adjustedY);
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    // End pinch with inertia
+    if (isPanning) {
+      setIsPanning(false);
+      // Kick off inertia if there is velocity
+      if (Math.abs(inertiaRef.current.vx) > 0.5 || Math.abs(inertiaRef.current.vy) > 0.5) {
+        startInertia();
+      }
+    }
+    lastTouchRef.current = [];
+    if (isStrokeActiveRef.current) {
+      endStroke();
+    }
+    isDrawing.current = false;
+    setIsErasing(false);
+  };
+
+  // Wheel event handler for zooming and scrolling
+  const handleWheel = (e) => {
+    e.evt.preventDefault();
+    
+    const scaleBy = 1.1;
+    const stage = e.target.getStage();
+    const oldScale = stage.scaleX();
+    const pointer = stage.getPointerPosition();
+
+    if (e.evt.ctrlKey || e.evt.metaKey) {
+      // Zoom with Ctrl+Wheel (smoother scaling)
+      const deltaScale = e.evt.deltaY > 0 ? 1 / scaleBy : scaleBy;
+      const newScale = oldScale * deltaScale;
+      const clampedScale = Math.max(0.2, Math.min(3, newScale));
+      
+      // Only update if scale actually changes
+  if (Math.abs(clampedScale - oldScale) > 0.001) {
+        const mousePointTo = {
+          x: (pointer.x - stage.x()) / oldScale,
+          y: (pointer.y - stage.y()) / oldScale,
+        };
+
+        const newPos = {
+          x: pointer.x - mousePointTo.x * clampedScale,
+          y: pointer.y - mousePointTo.y * clampedScale,
+        };
+
+        // Use requestAnimationFrame for smooth zoom
+        requestAnimationFrame(() => {
+          setZoom(clampedScale);
+          setPanOffset(curr => clampPan(newPos.x, newPos.y, clampedScale));
+        });
+      }
+    } else {
+      // Pan with regular wheel (smoother panning)
+  const deltaX = e.evt.deltaX || 0;
+  const deltaY = e.evt.deltaY || 0;
+      
+      // Reduce sensitivity for smoother scrolling
+      const sensitivity = 0.8;
+      const adjustedDeltaX = deltaX * sensitivity;
+      const adjustedDeltaY = deltaY * sensitivity;
+      
+      // Use requestAnimationFrame for smooth panning
+      requestAnimationFrame(() => {
+        setPanOffset(prev => {
+          const cand = { x: prev.x - adjustedDeltaX, y: prev.y - adjustedDeltaY };
+          return clampPan(cand.x, cand.y, zoom);
+        });
+      });
+    }
+  };
+
+  // Helper function to calculate distance from point to line
+  const getDistanceToLine = (px, py, linePoints) => {
+    if (linePoints.length < 4) return Infinity;
+    
+    let minDistance = Infinity;
+    for (let i = 0; i < linePoints.length - 2; i += 2) {
+      const x1 = linePoints[i];
+      const y1 = linePoints[i + 1];
+      const x2 = linePoints[i + 2];
+      const y2 = linePoints[i + 3];
+      
+      const distance = getDistancePointToLineSegment(px, py, x1, y1, x2, y2);
+      minDistance = Math.min(minDistance, distance);
+    }
+    
+    return minDistance;
+  };
+
+  const getDistancePointToLineSegment = (px, py, x1, y1, x2, y2) => {
+    const A = px - x1;
+    const B = py - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    
+    if (lenSq === 0) return Math.sqrt(A * A + B * B);
+    
+    let param = dot / lenSq;
+    param = Math.max(0, Math.min(1, param));
+
+    const xx = x1 + param * C;
+    const yy = y1 + param * D;
+
+    const dx = px - xx;
+    const dy = py - yy;
+    
+    return Math.sqrt(dx * dx + dy * dy);
   };
 
   // Template renderer
@@ -1174,7 +2076,7 @@ export default function WhiteboardEditor() {
   };
 
   return (
-    <div className="h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex flex-col relative overflow-hidden">
+    <div className="h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex flex-col relative z-0 overflow-hidden">
       {/* Background Pattern */}
       <div className="absolute inset-0 opacity-30">
         <div className="absolute inset-0" style={{
@@ -1183,9 +2085,9 @@ export default function WhiteboardEditor() {
         }}></div>
       </div>
       
-      {/* Enhanced Glassmorphism Header */}
-      <div className="relative bg-white/70 backdrop-blur-xl border-b border-white/20 shadow-lg shadow-blue-500/10 px-6 py-4">
-        <div className="flex items-center justify-between">
+  {/* Enhanced Glassmorphism Header */}
+      <div ref={headerRef} className="relative bg-white/70 backdrop-blur-xl border-b border-white/20 shadow-lg shadow-blue-500/10 px-4 md:px-6 py-3 md:py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <button
               onClick={() => navigate('/dashboard')}
@@ -1199,7 +2101,7 @@ export default function WhiteboardEditor() {
               onChange={(e) => setTitle(e.target.value)}
               onBlur={async () => {
                 try {
-                  await axios.put(`https://canvasconnect-fcch.onrender.com/api/boards/update`, {
+                  await axios.put(`${API_BASE_URL}/api/boards/update`, {
                     boardId: id,
                     title: title,
                   });
@@ -1207,7 +2109,7 @@ export default function WhiteboardEditor() {
                   console.error("Failed to update title", err);
                 }
               }}
-              className="text-2xl font-bold bg-white/30 backdrop-blur-sm border border-white/20 outline-none focus:bg-white/40 focus:border-blue-300/50 focus:ring-2 focus:ring-blue-500/20 px-4 py-2 rounded-xl transition-all duration-300 placeholder:text-slate-400 text-slate-700"
+              className="w-full md:w-auto max-w-[80vw] md:max-w-none text-2xl font-bold bg-white/30 backdrop-blur-sm border border-white/20 outline-none focus:bg-white/40 focus:border-blue-300/50 focus:ring-2 focus:ring-blue-500/20 px-3 md:px-4 py-2 rounded-xl transition-all duration-300 placeholder:text-slate-400 text-slate-700"
               placeholder="Untitled Whiteboard"
             />
             <div className="px-4 py-2 bg-gradient-to-r from-blue-500/10 to-indigo-500/10 backdrop-blur-sm text-blue-700 rounded-full text-sm font-semibold border border-blue-200/50 shadow-sm">
@@ -1306,12 +2208,23 @@ export default function WhiteboardEditor() {
         </div>
       </div>
 
-      {/* Enhanced Glassmorphism Main Toolbar */}
-      <div className="relative bg-white/60 backdrop-blur-xl border-b border-white/20 px-6 py-4 shadow-lg shadow-blue-500/5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-6">
+  {/* Mobile Tools Toggle (floating for small screens) */}
+      <button
+        onClick={() => setIsToolbarOpen((v) => !v)}
+        className="md:hidden fixed bottom-20 right-4 z-[80] px-3 py-2 rounded-full shadow-lg shadow-blue-500/10 bg-gradient-to-r from-slate-700 to-slate-900 text-white flex items-center gap-2 active:scale-95"
+        aria-label={isToolbarOpen ? 'Hide tools' : 'Show tools'}
+      >
+        {isToolbarOpen ? <EyeOff className="w-4 h-4" /> : <Settings className="w-4 h-4" />}
+        <span className="text-xs font-semibold">Tools</span>
+      </button>
+
+  {/* Enhanced Glassmorphism Main Toolbar (collapsible) */}
+    {isToolbarOpen && (
+  <div ref={toolbarRef} className="relative z-[100000] bg-white/60 backdrop-blur-xl border-b border-white/20 px-3 md:px-6 py-3 md:py-4 shadow-lg shadow-blue-500/5 overflow-x-auto overflow-y-visible md:overflow-x-auto">
+  <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2 md:gap-3" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex items-center gap-6 md:shrink-0">
             {/* Enhanced Drawing Tools */}
-            <div className="flex items-center gap-2 p-2 bg-white/40 backdrop-blur-sm rounded-2xl border border-white/30 shadow-lg">
+            <div className="flex flex-wrap md:flex-nowrap items-center gap-2 p-2 bg-white/40 backdrop-blur-sm rounded-2xl border border-white/30 shadow-lg">
               <button
                 onClick={() => {
                   setSelectedTool('select');
@@ -1400,7 +2313,15 @@ export default function WhiteboardEditor() {
               {mode === MODES.ERASE && (
                 <div className="relative">
                   <button
-                    onClick={() => setShowEraserSizePanel(!showEraserSizePanel)}
+                    ref={eraserTriggerRef}
+                    onClick={() => {
+                      setShowColorPalette(false);
+                      setShowStrokeWidthPanel(false);
+                      setShowHighlighterPanel(false);
+                      setShowBackgroundPanel(false);
+                      setShowExportPanel(false);
+                      setShowEraserSizePanel((v) => !v);
+                    }}
                     className="dropdown-trigger group flex items-center gap-3 px-4 py-2 rounded-xl border border-white/30 hover:bg-white/60 transition-all duration-300 backdrop-blur-sm hover:shadow-lg hover:scale-105"
                   >
                     <div 
@@ -1413,8 +2334,8 @@ export default function WhiteboardEditor() {
                     <span className="text-sm font-medium text-slate-700">{eraserSize}px</span>
                   </button>
                   
-                  {showEraserSizePanel && (
-                    <div className="dropdown-panel absolute top-full left-0 mt-3 p-4 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 z-[9999] min-w-[280px]">
+                  <DropdownPortal open={showEraserSizePanel} anchorRef={eraserTriggerRef} align="left" minWidth={280}>
+                    <div className="p-4 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20">
                       <div className="grid grid-cols-4 gap-3">
                         {eraserSizes.map((size) => (
                           <button
@@ -1441,7 +2362,7 @@ export default function WhiteboardEditor() {
                       </div>
                       <div className="text-xs text-slate-500 mt-3 text-center font-medium">Eraser Size</div>
                     </div>
-                  )}
+                  </DropdownPortal>
                 </div>
               )}
 
@@ -1449,7 +2370,15 @@ export default function WhiteboardEditor() {
               {mode === MODES.HIGHLIGHT && (
                 <div className="relative">
                   <button
-                    onClick={() => setShowHighlighterPanel(!showHighlighterPanel)}
+                    ref={highlighterTriggerRef}
+                    onClick={() => {
+                      setShowColorPalette(false);
+                      setShowStrokeWidthPanel(false);
+                      setShowEraserSizePanel(false);
+                      setShowBackgroundPanel(false);
+                      setShowExportPanel(false);
+                      setShowHighlighterPanel((v) => !v);
+                    }}
                     className="dropdown-trigger group flex items-center gap-3 px-4 py-2 rounded-xl border border-white/30 hover:bg-white/60 transition-all duration-300 backdrop-blur-sm hover:shadow-lg hover:scale-105"
                   >
                     <div 
@@ -1459,8 +2388,8 @@ export default function WhiteboardEditor() {
                     <span className="text-sm font-medium text-slate-700">{highlighterWidth}px</span>
                   </button>
                   
-                  {showHighlighterPanel && (
-                    <div className="dropdown-panel absolute top-full left-0 mt-3 p-5 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 z-[9999] min-w-[320px]">
+                  <DropdownPortal open={showHighlighterPanel} anchorRef={highlighterTriggerRef} align="left" minWidth={320}>
+                    <div className="p-5 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20">
                       <div className="mb-4">
                         <div className="text-sm font-semibold text-slate-700 mb-3">Colors</div>
                         <div className="grid grid-cols-4 gap-3 mb-4">
@@ -1509,7 +2438,7 @@ export default function WhiteboardEditor() {
                         </div>
                       </div>
                     </div>
-                  )}
+                  </DropdownPortal>
                 </div>
               )}
             </div>
@@ -1517,10 +2446,18 @@ export default function WhiteboardEditor() {
             <div className="h-8 w-px bg-gradient-to-b from-transparent via-slate-300 to-transparent"></div>
 
             {/* Enhanced Color Picker */}
-            <div className="relative">
+      <div className="relative">
               <button
-                onClick={() => setShowColorPalette(!showColorPalette)}
-                className="dropdown-trigger group flex items-center gap-3 px-4 py-2 rounded-xl border border-white/30 hover:bg-white/60 transition-all duration-300 backdrop-blur-sm hover:shadow-lg hover:scale-105"
+                ref={colorTriggerRef}
+                onClick={() => {
+                  setShowStrokeWidthPanel(false);
+                  setShowEraserSizePanel(false);
+                  setShowHighlighterPanel(false);
+                  setShowBackgroundPanel(false);
+                  setShowExportPanel(false);
+                  setShowColorPalette((v) => !v);
+                }}
+        className="dropdown-trigger group flex items-center gap-3 px-4 py-2 rounded-xl border border-white/30 hover:bg-white/60 transition-all duration-300 backdrop-blur-sm hover:shadow-lg hover:scale-105 whitespace-nowrap"
               >
                 <Palette className="w-4 h-4 text-slate-600" />
                 <div 
@@ -1529,8 +2466,8 @@ export default function WhiteboardEditor() {
                 ></div>
               </button>
               
-              {showColorPalette && (
-                <div className="dropdown-panel absolute top-full left-0 mt-3 p-5 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 z-[9999] min-w-[280px]">
+              <DropdownPortal open={showColorPalette} anchorRef={colorTriggerRef} align="left" minWidth={280}>
+                <div className="p-5 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20">
                   <div className="grid grid-cols-5 gap-3 mb-4">
                     {colorPalette.map((color) => (
                       <button
@@ -1558,14 +2495,22 @@ export default function WhiteboardEditor() {
                     />
                   </div>
                 </div>
-              )}
+              </DropdownPortal>
             </div>
 
             {/* Enhanced Stroke Width */}
-            <div className="relative">
+      <div className="relative">
               <button
-                onClick={() => setShowStrokeWidthPanel(!showStrokeWidthPanel)}
-                className="dropdown-trigger group flex items-center gap-3 px-4 py-2 rounded-xl border border-white/30 hover:bg-white/60 transition-all duration-300 backdrop-blur-sm hover:shadow-lg hover:scale-105"
+                ref={strokeTriggerRef}
+                onClick={() => {
+                  setShowColorPalette(false);
+                  setShowEraserSizePanel(false);
+                  setShowHighlighterPanel(false);
+                  setShowBackgroundPanel(false);
+                  setShowExportPanel(false);
+                  setShowStrokeWidthPanel((v) => !v);
+                }}
+        className="dropdown-trigger group flex items-center gap-3 px-4 py-2 rounded-xl border border-white/30 hover:bg-white/60 transition-all duration-300 backdrop-blur-sm hover:shadow-lg hover:scale-105 whitespace-nowrap"
               >
                 <div className="flex items-center gap-2">
                   <div 
@@ -1576,8 +2521,8 @@ export default function WhiteboardEditor() {
                 </div>
               </button>
               
-              {showStrokeWidthPanel && (
-                <div className="dropdown-panel absolute top-full left-0 mt-3 p-5 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 z-[9999] min-w-[280px]">
+              <DropdownPortal open={showStrokeWidthPanel} anchorRef={strokeTriggerRef} align="left" minWidth={280}>
+                <div className="p-5 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20">
                   <div className="flex flex-col gap-3 mb-4">
                     {strokeWidths.map((width) => (
                       <button
@@ -1613,16 +2558,24 @@ export default function WhiteboardEditor() {
                     />
                   </div>
                 </div>
-              )}
+              </DropdownPortal>
             </div>
 
             <div className="h-8 w-px bg-gradient-to-b from-transparent via-slate-300 to-transparent"></div>
 
             {/* Enhanced Background Color */}
-            <div className="relative">
+      <div className="relative">
               <button
-                onClick={() => setShowBackgroundPanel(!showBackgroundPanel)}
-                className="dropdown-trigger group flex items-center gap-3 px-4 py-2 rounded-xl border border-white/30 hover:bg-white/60 transition-all duration-300 backdrop-blur-sm hover:shadow-lg hover:scale-105"
+                ref={backgroundTriggerRef}
+                onClick={() => {
+                  setShowColorPalette(false);
+                  setShowStrokeWidthPanel(false);
+                  setShowEraserSizePanel(false);
+                  setShowHighlighterPanel(false);
+                  setShowExportPanel(false);
+                  setShowBackgroundPanel((v) => !v);
+                }}
+        className="dropdown-trigger group flex items-center gap-3 px-4 py-2 rounded-xl border border-white/30 hover:bg-white/60 transition-all duration-300 backdrop-blur-sm hover:shadow-lg hover:scale-105 whitespace-nowrap"
               >
                 <div 
                   className="w-8 h-8 rounded-xl border-2 border-white/50 shadow-lg"
@@ -1631,8 +2584,8 @@ export default function WhiteboardEditor() {
                 <span className="text-sm font-medium text-slate-700">Background</span>
               </button>
               
-              {showBackgroundPanel && (
-                <div className="dropdown-panel absolute top-full left-0 mt-3 p-5 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 z-[9999] min-w-[280px]">
+              <DropdownPortal open={showBackgroundPanel} anchorRef={backgroundTriggerRef} align="left" minWidth={280}>
+                <div className="p-5 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20">
                   <div className="grid grid-cols-4 gap-3">
                     {backgroundColors.map((color) => (
                       <button
@@ -1651,7 +2604,7 @@ export default function WhiteboardEditor() {
                     ))}
                   </div>
                 </div>
-              )}
+              </DropdownPortal>
             </div>
 
             {/* Enhanced Sticky Note */}
@@ -1677,9 +2630,9 @@ export default function WhiteboardEditor() {
             </button>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 md:shrink-0">
             {/* Enhanced Zoom Controls */}
-            <div className="flex items-center gap-2 p-2 bg-white/40 backdrop-blur-lg rounded-2xl border border-white/30 shadow-lg">
+            <div className="flex flex-wrap items-center gap-2 p-2 bg-white/40 backdrop-blur-lg rounded-2xl border border-white/30 shadow-lg">
               <button
                 onClick={handleZoomOut}
                 className="group p-2 hover:bg-white/60 rounded-xl transition-all duration-300 hover:scale-105"
@@ -1705,7 +2658,7 @@ export default function WhiteboardEditor() {
             </div>
 
             {/* Enhanced Undo/Redo */}
-            <div className="flex items-center gap-2 p-2 bg-white/40 backdrop-blur-lg rounded-2xl border border-white/30 shadow-lg">
+            <div className="flex flex-wrap items-center gap-2 p-2 bg-white/40 backdrop-blur-lg rounded-2xl border border-white/30 shadow-lg">
               <button
                 onClick={handleUndo}
                 disabled={lines.length === 0}
@@ -1734,17 +2687,25 @@ export default function WhiteboardEditor() {
             <div className="h-8 w-px bg-gradient-to-b from-transparent via-slate-300 to-transparent"></div>
 
             {/* Enhanced Export Options */}
-            <div className="relative">
+      <div className="relative">
               <button
-                onClick={() => setShowExportPanel(!showExportPanel)}
-                className="dropdown-trigger group flex items-center gap-3 px-4 py-2 rounded-xl border border-white/30 hover:bg-white/60 transition-all duration-300 backdrop-blur-sm hover:shadow-lg hover:scale-105"
+                ref={exportTriggerRef}
+                onClick={() => {
+                  setShowColorPalette(false);
+                  setShowStrokeWidthPanel(false);
+                  setShowEraserSizePanel(false);
+                  setShowHighlighterPanel(false);
+                  setShowBackgroundPanel(false);
+                  setShowExportPanel((v) => !v);
+                }}
+        className="dropdown-trigger group flex items-center gap-3 px-4 py-2 rounded-xl border border-white/30 hover:bg-white/60 transition-all duration-300 backdrop-blur-sm hover:shadow-lg hover:scale-105 whitespace-nowrap"
               >
                 <Download className="w-4 h-4 text-slate-600" />
                 <span className="text-sm font-medium text-slate-700">Export</span>
               </button>
               
-              {showExportPanel && (
-                <div className="dropdown-panel absolute top-full right-0 mt-3 p-3 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 z-[9999] min-w-[200px]">
+              <DropdownPortal open={showExportPanel} anchorRef={exportTriggerRef} align="right" minWidth={200}>
+                <div className="p-3 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20">
                   <button
                     onClick={() => {
                       exportAsImage();
@@ -1766,7 +2727,7 @@ export default function WhiteboardEditor() {
                     <span className="text-sm font-medium text-slate-700">Export as PDF</span>
                   </button>
                 </div>
-              )}
+              </DropdownPortal>
             </div>
 
             {/* Enhanced Share */}
@@ -1788,54 +2749,11 @@ export default function WhiteboardEditor() {
             </button>
           </div>
         </div>
-
-        {/* Enhanced Instructions with Glassmorphism */}
-        <div className="mt-4 p-4 bg-white/30 backdrop-blur-sm rounded-xl border border-white/20">
-          <div className="text-sm text-slate-600 leading-relaxed">
-            {mode === MODES.DRAW
-              ? selectedTool === 'select' 
-                ? (
-                  <div className="flex items-center gap-2">
-                    <MousePointer className="w-4 h-4 text-blue-500" />
-                    <span><strong>Select Mode:</strong> Click and drag to select elements • Double-click sticky notes to edit • Right-click for context menu</span>
-                  </div>
-                )
-                : selectedTool === 'text'
-                ? (
-                  <div className="flex items-center gap-2">
-                    <Type className="w-4 h-4 text-teal-500" />
-                    <span><strong>Text Mode:</strong> Click anywhere to create a text box • Double-click to edit text • Use toolbar to format</span>
-                  </div>
-                )
-                : (
-                  <div className="flex items-center gap-2">
-                    <PenTool className="w-4 h-4 text-purple-500" />
-                    <span><strong>Draw Mode:</strong> Click and drag to draw • Use color palette and stroke width controls to customize • Hold Shift for straight lines</span>
-                  </div>
-                )
-              : mode === MODES.HIGHLIGHT
-              ? (
-                <div className="flex items-center gap-2">
-                  <Highlighter className="w-4 h-4 text-yellow-500" />
-                  <span><strong>Highlight Mode:</strong> Drag to highlight content • Adjust highlighter color and width • Perfect for marking important areas</span>
-                </div>
-              )
-              : (
-                <div className="flex items-center gap-2">
-                  <Eraser className="w-4 h-4 text-red-500" />
-                  <span><strong>Erase Mode:</strong> Drag to erase lines • Adjust eraser size with the size control • Switch back to pen mode to continue drawing</span>
-                </div>
-              )
-            }
-            {isVoiceEnabled && (
-              <div className="flex items-center gap-2 mt-2 text-green-600">
-                <Mic className="w-4 h-4" />
-                <span><strong>Voice Chat Active:</strong> Collaborate in real-time with team members</span>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
+
+      )}
+
+  {/* Instructions removed per user request */}
 
       {/* Enhanced Glassmorphism Text Box Toolbar */}
       {selectedBox && (
@@ -1970,33 +2888,43 @@ export default function WhiteboardEditor() {
       )}
 
       {/* Enhanced Canvas with Glassmorphism Effects */}
-      <div className="flex-1 overflow-hidden relative">
+  <div className="flex-1 overflow-hidden relative z-0">
         {/* Canvas Container with Enhanced Styling */}
-        <div 
+  <div 
           id="whiteboard-stage" 
-          className="relative h-full w-full shadow-inner"
+      className="relative h-full w-full shadow-inner z-0"
           style={{ 
             backgroundColor: backgroundColor,
             backgroundImage: backgroundColor === '#ffffff' 
               ? `radial-gradient(circle at 1px 1px, rgba(59, 130, 246, 0.15) 1px, transparent 0)`
               : `radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.1) 1px, transparent 0)`,
-            backgroundSize: '20px 20px'
+      backgroundSize: '20px 20px',
+      overscrollBehavior: 'contain' // keep surrounding UI (toolbar) stable
           }}
           onClick={handleCanvasClick}
         >
           <Stage
             ref={stageRef}
-            width={window.innerWidth}
-            height={window.innerHeight - 200}
+            width={stageSize.width}
+            height={stageSize.height}
             scaleX={zoom}
             scaleY={zoom}
             x={panOffset.x}
             y={panOffset.y}
+            className="z-0"
             onMouseDown={selectedTool === 'text' ? undefined : handleMouseDown}
-            onMousemove={selectedTool === 'text' ? undefined : handleMouseMove}
-            onMouseup={selectedTool === 'text' ? undefined : handleMouseUp}
+            onMouseMove={selectedTool === 'text' ? undefined : handleMouseMove}
+            onMouseUp={selectedTool === 'text' ? undefined : handleMouseUp}
+            onTouchStart={selectedTool === 'text' ? undefined : handleTouchStart}
+            onTouchMove={selectedTool === 'text' ? undefined : handleTouchMove}
+            onTouchEnd={selectedTool === 'text' ? undefined : handleTouchEnd}
+            onWheel={handleWheel}
             style={{ 
-              cursor: mode === MODES.ERASE ? "crosshair" : mode === MODES.HIGHLIGHT ? "crosshair" : selectedTool === 'pen' ? "crosshair" : selectedTool === 'text' ? "text" : "default"
+              cursor: mode === MODES.ERASE ? "crosshair" : mode === MODES.HIGHLIGHT ? "crosshair" : selectedTool === 'pen' ? "crosshair" : selectedTool === 'text' ? "text" : "default",
+              touchAction: 'none',
+              willChange: 'transform',
+              transform: 'translateZ(0)', // Force hardware acceleration
+              backfaceVisibility: 'hidden'
             }}
           >
             <Layer ref={layerRef}>
@@ -2029,21 +2957,24 @@ export default function WhiteboardEditor() {
               {/* Render template-specific components */}
               {renderTemplateComponents()}
               
-              {/* Enhanced drawing lines */}
+              {/* Ultra-optimized drawing lines for maximum performance */}
               {lines.map((line, index) => (
                 <Line
-                  key={index}
+                  key={line.id || index}
                   points={line.points}
-                  stroke={line.color || "#1f2937"}
+                  stroke={line.color || line.stroke || "#1f2937"}
                   strokeWidth={line.strokeWidth || 3}
-                  tension={0.5}
-                  lineCap={line.isHighlight ? "round" : "round"}
+                  tension={0}
+                  lineCap="round"
                   lineJoin="round"
-                  globalCompositeOperation={line.isHighlight ? "multiply" : "source-over"}
-                  opacity={line.opacity || 1.0}
-                  shadowColor={line.isHighlight ? "transparent" : "rgba(0,0,0,0.1)"}
-                  shadowBlur={line.isHighlight ? 0 : 1}
-                  shadowOffset={line.isHighlight ? { x: 0, y: 0 } : { x: 1, y: 1 }}
+                  globalCompositeOperation={line.isHighlight || line.globalCompositeOperation === 'multiply' ? "multiply" : "source-over"}
+                  opacity={line.opacity || (line.isHighlight ? 0.5 : 1.0)}
+                  perfectDrawEnabled={false}
+                  shadowForStrokeEnabled={false}
+                  hitStrokeWidth={0}
+                  listening={false}
+                  transformsEnabled="position"
+                  visible={true}
                 />
               ))}
 
@@ -2142,8 +3073,10 @@ export default function WhiteboardEditor() {
                 left: box.x,
                 top: box.y,
                 minWidth: '120px',
-                maxWidth: '400px',
+                width: box.width || 200,
+                maxWidth: '600px',
                 minHeight: '35px',
+                height: typeof box.height === 'number' ? box.height : 'auto',
                 cursor: isEditing === box.id ? 'text' : 'move',
                 zIndex: 10,
                 borderRadius: '16px',
@@ -2159,6 +3092,9 @@ export default function WhiteboardEditor() {
                   : '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
               }}
               onMouseDown={(e) => handleTextMouseDown(e, box.id)}
+              onTouchStart={(e) => handleTextTouchStart(e, box.id)}
+              onTouchMove={handleTextTouchMove}
+              onTouchEnd={handleTextTouchEnd}
               onDoubleClick={() => handleDoubleClick(box.id)}
             >
               {isEditing === box.id ? (
@@ -2202,11 +3138,23 @@ export default function WhiteboardEditor() {
                     fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
                     lineHeight: '1.6',
                     minHeight: '35px',
-                    width: 'max-content',
+                    width: '100%',
                   }}
                 >
                   {box.text}
                 </div>
+              )}
+              {/* Resize handle (bottom-right) */}
+              {isEditing !== box.id && (
+                <div
+                  onMouseDown={(e) => startResize(e, box.id)}
+                  onTouchStart={(e) => startResizeTouch(e, box.id)}
+                  title="Resize"
+                  className="absolute bottom-1 right-1 w-4 h-4 rounded-md bg-blue-500/80 hover:bg-blue-600 cursor-se-resize shadow ring-2 ring-white"
+                  style={{
+                    boxShadow: '0 2px 6px rgba(37, 99, 235, 0.35)'
+                  }}
+                />
               )}
             </div>
           ))}
